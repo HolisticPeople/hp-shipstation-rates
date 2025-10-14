@@ -1,0 +1,12 @@
+.git/
+.github/
+node_modules/
+vendor/
+*.log
+*.zip
+Plans and reports/
+README.md
+**/.DS_Store
+**/Thumbs.db
+
+

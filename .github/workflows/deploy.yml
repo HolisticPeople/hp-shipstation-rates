@@ -1,0 +1,84 @@
+name: Deploy OneTeam fix to Kinsta
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: staging or production
+        required: true
+        default: staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select environment
+        id: env
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = push ]; then
+            echo env=staging >> $GITHUB_OUTPUT
+          else
+            echo env=${{ github.event.inputs.environment }} >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set environment variables
+        id: setvars
+        shell: bash
+        run: |
+          if [ "${{ steps.env.outputs.env }}" = production ]; then
+            echo HOST=${{ secrets.KINSTAPROD_HOST }} >> $GITHUB_ENV
+            echo PORT=${{ secrets.KINSTAPROD_PORT }} >> $GITHUB_ENV
+            echo USER=${{ secrets.KINSTAPROD_USER }} >> $GITHUB_ENV
+            echo PLUGINS_BASE='${{ secrets.KINSTAPROD_PLUGINS_BASE }}' >> $GITHUB_ENV
+            echo SSH_KEY='prod' >> $GITHUB_ENV
+          else
+            echo HOST=${{ secrets.KINSTA_HOST }} >> $GITHUB_ENV
+            echo PORT=${{ secrets.KINSTA_PORT }} >> $GITHUB_ENV
+            echo USER=${{ secrets.KINSTA_USER }} >> $GITHUB_ENV
+            echo PLUGINS_BASE='${{ secrets.KINSTA_PLUGINS_BASE }}' >> $GITHUB_ENV
+            echo SSH_KEY='staging' >> $GITHUB_ENV
+          fi
+          echo PLUGIN_FOLDER_NAME=hp-shipstation-rates >> $GITHUB_ENV
+          echo TARGET="$PLUGINS_BASE/$PLUGIN_FOLDER_NAME" >> $GITHUB_ENV
+
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: |
+            ${{ env.SSH_KEY == 'prod' && secrets.KINSTAPROD_SSH_KEY || secrets.KINSTA_SSH_KEY }}
+
+      - name: Add host to known_hosts
+        run: ssh-keyscan -p "$PORT" "$HOST" 2>/dev/null >> ~/.ssh/known_hosts
+
+      - name: Smoke test (check plugin path)
+        run: ssh -p "$PORT" "$USER@$HOST" "ls -la '$PLUGINS_BASE' || true"
+
+      - name: Backup existing plugin (if exists)
+        run: ssh -p "$PORT" "$USER@$HOST" "[ -d '$TARGET' ] && cp -rn '$TARGET' '$TARGET.bak.$(date +%Y%m%d-%H%M%S)' || true"
+
+      - name: Deploy plugin files
+        shell: bash
+        run: |
+          RSYNC_SSH="ssh -p $PORT"
+          rsync -avz -e "$RSYNC_SSH" --delete-excluded --exclude-from=.github/deploy-exclude.txt \
+            --exclude='.git*' \
+            --exclude='*.md' \
+            --exclude='.github' \
+            --exclude='*.zip' \
+            --exclude='*.tgz' \
+            --exclude='oneteam-includes.tgz' \
+            ./ "$USER@$HOST:$TARGET/"
+
+      - name: Flush caches (WP + transients + opcache)
+        run: |
+          ssh -p "$PORT" "$USER@$HOST" "cd \"$PLUGINS_BASE/../..\" && wp cache flush --allow-root && wp transient delete --all --allow-root || true"
+          ssh -p "$PORT" "$USER@$HOST" "php -r 'function_exists("opcache_reset") && opcache_reset();' || true"
+
+
+
