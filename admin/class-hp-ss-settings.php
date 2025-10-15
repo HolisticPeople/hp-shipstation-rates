@@ -208,7 +208,7 @@ class HP_SS_Settings {
                                             <tbody>
                                                 <?php foreach ( $discovered_services['usps'] as $code => $name ) : 
                                                     $is_enabled = isset( $service_config[ $code ]['enabled'] ) && $service_config[ $code ]['enabled'];
-                                                    $custom_name = isset( $service_config[ $code ]['name'] ) ? $service_config[ $code ]['name'] : '';
+                                                    $custom_name = isset( $service_config[ $code ]['name'] ) && ! empty( $service_config[ $code ]['name'] ) ? $service_config[ $code ]['name'] : $name;
                                                 ?>
                                                     <tr>
                                                         <td style="text-align: center;">
@@ -223,8 +223,7 @@ class HP_SS_Settings {
                                                             <input type="text" 
                                                                    name="hp_ss_settings[service_config][<?php echo esc_attr( $code ); ?>][name]" 
                                                                    value="<?php echo esc_attr( $custom_name ); ?>" 
-                                                                   class="regular-text" 
-                                                                   placeholder="<?php echo esc_attr( $name ); ?>" />
+                                                                   class="regular-text" />
                                                         </td>
                                                     </tr>
                                                 <?php endforeach; ?>
@@ -246,7 +245,7 @@ class HP_SS_Settings {
                                             <tbody>
                                                 <?php foreach ( $discovered_services['ups'] as $code => $name ) : 
                                                     $is_enabled = isset( $service_config[ $code ]['enabled'] ) && $service_config[ $code ]['enabled'];
-                                                    $custom_name = isset( $service_config[ $code ]['name'] ) ? $service_config[ $code ]['name'] : '';
+                                                    $custom_name = isset( $service_config[ $code ]['name'] ) && ! empty( $service_config[ $code ]['name'] ) ? $service_config[ $code ]['name'] : $name;
                                                 ?>
                                                     <tr>
                                                         <td style="text-align: center;">
@@ -261,8 +260,7 @@ class HP_SS_Settings {
                                                             <input type="text" 
                                                                    name="hp_ss_settings[service_config][<?php echo esc_attr( $code ); ?>][name]" 
                                                                    value="<?php echo esc_attr( $custom_name ); ?>" 
-                                                                   class="regular-text" 
-                                                                   placeholder="<?php echo esc_attr( $name ); ?>" />
+                                                                   class="regular-text" />
                                                         </td>
                                                     </tr>
                                                 <?php endforeach; ?>
