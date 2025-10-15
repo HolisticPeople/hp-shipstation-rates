@@ -2,84 +2,124 @@ name: Deploy HP ShipStation Rates to Kinsta
 
 on:
   push:
-    branches: [dev]
+    branches:
+      - dev   # Auto-deploy to staging on push to dev
+      # master branch does NOT auto-deploy to production (manual only)
   workflow_dispatch:
     inputs:
       environment:
-        description: staging or production
+        description: 'Deployment environment'
         required: true
-        default: staging
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Select environment
+      - name: Determine environment
         id: env
-        shell: bash
         run: |
-          if [ "${{ github.event_name }}" = push ]; then
-            echo env=staging >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Automatic push to dev = staging deployment
+            echo "env=staging" >> $GITHUB_OUTPUT
           else
-            echo env=${{ github.event.inputs.environment }} >> $GITHUB_OUTPUT
+            # Manual workflow_dispatch = user chooses environment
+            echo "env=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Set environment variables
-        id: setvars
-        shell: bash
+        id: vars
         run: |
-          if [ "${{ steps.env.outputs.env }}" = production ]; then
-            echo HOST=${{ secrets.KINSTAPROD_HOST }} >> $GITHUB_ENV
-            echo PORT=${{ secrets.KINSTAPROD_PORT }} >> $GITHUB_ENV
-            echo USER=${{ secrets.KINSTAPROD_USER }} >> $GITHUB_ENV
-            echo PLUGINS_BASE='${{ secrets.KINSTAPROD_PLUGINS_BASE }}' >> $GITHUB_ENV
-            echo SSH_KEY='prod' >> $GITHUB_ENV
+          ENV="${{ steps.env.outputs.env }}"
+          
+          if [ "$ENV" = "production" ]; then
+            echo "host=${{ secrets.KINSTAPROD_HOST }}" >> $GITHUB_OUTPUT
+            echo "port=${{ secrets.KINSTAPROD_PORT }}" >> $GITHUB_OUTPUT
+            echo "user=${{ secrets.KINSTAPROD_USER }}" >> $GITHUB_OUTPUT
+            echo "plugins_base=${{ secrets.KINSTAPROD_PLUGINS_BASE }}" >> $GITHUB_OUTPUT
           else
-            echo HOST=${{ secrets.KINSTA_HOST }} >> $GITHUB_ENV
-            echo PORT=${{ secrets.KINSTA_PORT }} >> $GITHUB_ENV
-            echo USER=${{ secrets.KINSTA_USER }} >> $GITHUB_ENV
-            echo PLUGINS_BASE='${{ secrets.KINSTA_PLUGINS_BASE }}' >> $GITHUB_ENV
-            echo SSH_KEY='staging' >> $GITHUB_ENV
+            echo "host=${{ secrets.KINSTA_HOST }}" >> $GITHUB_OUTPUT
+            echo "port=${{ secrets.KINSTA_PORT }}" >> $GITHUB_OUTPUT
+            echo "user=${{ secrets.KINSTA_USER }}" >> $GITHUB_OUTPUT
+            echo "plugins_base=${{ secrets.KINSTA_PLUGINS_BASE }}" >> $GITHUB_OUTPUT
           fi
-          echo PLUGIN_FOLDER_NAME=hp-shipstation-rates >> $GITHUB_ENV
-          echo TARGET="$PLUGINS_BASE/$PLUGIN_FOLDER_NAME" >> $GITHUB_ENV
+          
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
 
       - name: Setup SSH key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ env.SSH_KEY == 'prod' && secrets.KINSTAPROD_SSH_KEY || secrets.KINSTA_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          if [ "${{ steps.vars.outputs.environment }}" = "production" ]; then
+            echo "${{ secrets.KINSTAPROD_SSH_KEY }}" > ~/.ssh/kinsta_key
+          else
+            echo "${{ secrets.KINSTA_SSH_KEY }}" > ~/.ssh/kinsta_key
+          fi
+          chmod 600 ~/.ssh/kinsta_key
+          
+          # Verify key format
+          echo "Verifying SSH key format..."
+          head -1 ~/.ssh/kinsta_key
+          tail -1 ~/.ssh/kinsta_key
+          
+          # Add host to known_hosts
+          ssh-keyscan -p ${{ steps.vars.outputs.port }} ${{ steps.vars.outputs.host }} >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Add host to known_hosts
-        run: ssh-keyscan -p "$PORT" "$HOST" 2>/dev/null >> ~/.ssh/known_hosts
-
-      - name: Smoke test (check plugin path)
-        run: ssh -p "$PORT" "$USER@$HOST" "ls -la '$PLUGINS_BASE' || true"
+      - name: Test SSH connection
+        run: |
+          echo "Testing SSH connection to ${{ steps.vars.outputs.environment }}..."
+          ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
+            -o StrictHostKeyChecking=no \
+            ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
+            "echo 'SSH connection successful!'"
 
       - name: Backup existing plugin (if exists)
-        run: ssh -p "$PORT" "$USER@$HOST" "[ -d '$TARGET' ] && cp -rn '$TARGET' '$TARGET.bak.$(date +%Y%m%d-%H%M%S)' || true"
-
-      - name: Deploy plugin files
-        shell: bash
         run: |
-          RSYNC_SSH="ssh -p $PORT"
-          rsync -rltvz --no-perms --no-owner --no-group -e "$RSYNC_SSH" \
-            --exclude='.git*' \
-            --exclude='*.md' \
-            --exclude='.github' \
-            --exclude='*.zip' \
-            --exclude='*.tgz' \
-            --exclude='oneteam-includes.tgz' \
-            --exclude='.gitignore' \
-            ./ "$USER@$HOST:$TARGET/"
+          PLUGIN_PATH="${{ steps.vars.outputs.plugins_base }}/hp-shipstation-rates"
+          
+          echo "Checking for existing plugin at: $PLUGIN_PATH"
+          
+          ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
+            ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
+            "if [ -d '$PLUGIN_PATH' ]; then cp -rn '$PLUGIN_PATH' '$PLUGIN_PATH.bak.\$(date +%Y%m%d-%H%M%S)'; echo 'Backup created'; else echo 'No existing plugin to backup'; fi"
 
-      - name: Flush caches (WP + transients + opcache)
+      - name: Deploy to ${{ steps.vars.outputs.environment }}
         run: |
-          ssh -p "$PORT" "$USER@$HOST" "cd \"$PLUGINS_BASE/../..\" && wp cache flush --allow-root && wp transient delete --all --allow-root || true"
-          ssh -p "$PORT" "$USER@$HOST" "php -r 'function_exists("opcache_reset") && opcache_reset();' || true"
+          PLUGIN_PATH="${{ steps.vars.outputs.plugins_base }}/hp-shipstation-rates"
+          
+          echo "Deploying to: ${{ steps.vars.outputs.environment }}"
+          echo "Target path: $PLUGIN_PATH"
+          
+          # Create plugin directory if it doesn't exist
+          ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
+            ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
+            "mkdir -p $PLUGIN_PATH"
+          
+          # Deploy files using rsync
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }}" \
+            --exclude-from='.github/deploy-exclude.txt' \
+            ./ ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }}:$PLUGIN_PATH/
+          
+          echo "✅ Deployment to ${{ steps.vars.outputs.environment }} complete!"
 
+      - name: Flush caches
+        run: |
+          echo "Flushing WordPress caches..."
+          
+          ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
+            ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
+            "cd ${{ steps.vars.outputs.plugins_base }}/../.. && wp cache flush --allow-root && wp transient delete --all --allow-root || true"
+          
+          echo "✅ Cache flush complete!"
 
-
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/kinsta_key
