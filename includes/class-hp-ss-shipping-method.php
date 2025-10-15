@@ -276,8 +276,8 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             }
 
             if ( $is_enabled ) {
-                // Use custom name if provided, otherwise use ShipStation's name
-                $display_name = ! empty( $custom_name ) ? $custom_name : $carrier_name . ' ' . $service_name;
+                // Use custom name if provided, otherwise use ShipStation's name (which already includes carrier)
+                $display_name = ! empty( $custom_name ) ? $custom_name : $service_name;
                 
                 $filtered_rates[] = array(
                     'id' => 'hp_ss_' . sanitize_title( $service_code ),

@@ -426,7 +426,7 @@ class HP_SS_Settings {
                 });
             });
             
-            // Make custom name fields always editable and add visual feedback
+            // Make custom name fields fully editable and add visual feedback
             $('.widefat tbody tr').each(function() {
                 var $row = $(this);
                 var $checkbox = $row.find('input[type="checkbox"]');
@@ -435,13 +435,39 @@ class HP_SS_Settings {
                 // Ensure name input is always enabled and fully interactive
                 $nameInput.prop('disabled', false)
                          .prop('readonly', false)
-                         .css('pointer-events', 'auto')
-                         .css('user-select', 'text')
-                         .css('cursor', 'text')
+                         .css({
+                             'pointer-events': 'auto',
+                             'user-select': 'text',
+                             '-webkit-user-select': 'text',
+                             '-moz-user-select': 'text',
+                             '-ms-user-select': 'text',
+                             'cursor': 'text'
+                         })
                          .attr('tabindex', '0');
                 
-                // Remove any event handlers that might block interaction
-                $nameInput.off('mousedown mouseup click focus');
+                // Enable triple-click to select all
+                $nameInput.on('click', function(e) {
+                    if (e.detail === 3) { // Triple click
+                        this.select();
+                    }
+                });
+                
+                // Enable Ctrl+A to select all
+                $nameInput.on('keydown', function(e) {
+                    if (e.ctrlKey && e.key === 'a') {
+                        e.preventDefault();
+                        this.select();
+                    }
+                });
+                
+                // Select all on focus for easier editing
+                $nameInput.on('focus', function() {
+                    var $this = $(this);
+                    // Delay selection slightly to ensure it works
+                    setTimeout(function() {
+                        $this[0].select();
+                    }, 50);
+                });
                 
                 // Add visual feedback when checkbox changes
                 $checkbox.on('change', function() {
@@ -500,6 +526,13 @@ class HP_SS_Settings {
         $result = HP_SS_Client::test_credentials( $api_key, $api_secret );
 
         if ( $result['success'] ) {
+            // Save credentials on successful test
+            $settings = get_option( 'hp_ss_settings', array() );
+            $settings['api_key'] = $api_key;
+            $settings['api_secret'] = $api_secret;
+            update_option( 'hp_ss_settings', $settings );
+            
+            $result['message'] .= ' (Credentials saved)';
             wp_send_json_success( $result );
         } else {
             wp_send_json_error( $result );
