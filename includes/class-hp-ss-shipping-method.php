@@ -317,6 +317,14 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
      * @return array Modified rates
      */
     public static function add_carrier_marker( $rates, $package ) {
+        // Check if badges are enabled
+        $settings = get_option( 'hp_ss_settings', array() );
+        $show_badges = isset( $settings['show_badges'] ) ? $settings['show_badges'] === 'yes' : true; // Default to true
+        
+        if ( ! $show_badges ) {
+            return $rates; // Don't add markers if badges are disabled
+        }
+        
         foreach ( $rates as $rate_key => $rate ) {
             // Only modify our shipping method's rates
             if ( strpos( $rate->get_method_id(), 'hp_shipstation' ) === false ) {
@@ -391,12 +399,12 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
                                 
                                 // Check for USPS marker and replace with actual badge image
                                 if (html.indexOf('{{USPS}}') !== -1) {
-                                    var badge = '<img src="<?php echo esc_url( $usps_badge_url ); ?>" alt="USPS" class="hp-ss-badge hp-ss-usps" style="display:inline-block;height:20px;width:auto;vertical-align:middle;margin-right:6px;" />';
+                                    var badge = '<img src="<?php echo esc_url( $usps_badge_url ); ?>" alt="USPS" class="hp-ss-badge hp-ss-usps" style="display:inline-block;height:24px;width:auto;vertical-align:middle;margin-right:8px;margin-left:-4px;" />';
                                     $label.html(html.replace(/\{\{USPS\}\}/g, badge));
                                 }
                                 // Check for UPS marker and replace with actual badge image
                                 if (html.indexOf('{{UPS}}') !== -1) {
-                                    var badge = '<img src="<?php echo esc_url( $ups_badge_url ); ?>" alt="UPS" class="hp-ss-badge hp-ss-ups" style="display:inline-block;height:20px;width:auto;vertical-align:middle;margin-right:6px;" />';
+                                    var badge = '<img src="<?php echo esc_url( $ups_badge_url ); ?>" alt="UPS" class="hp-ss-badge hp-ss-ups" style="display:inline-block;height:24px;width:auto;vertical-align:middle;margin-right:8px;margin-left:-4px;" />';
                                     $label.html(html.replace(/\{\{UPS\}\}/g, badge));
                                 }
                             });

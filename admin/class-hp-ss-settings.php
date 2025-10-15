@@ -356,7 +356,7 @@ class HP_SS_Settings {
                     <tr>
                         <th scope="row"><?php esc_html_e( 'Show Carrier Badges', 'hp-shipstation-rates' ); ?></th>
                         <td>
-                            <?php $show_badges = isset( $settings['show_badges'] ) && $settings['show_badges'] === 'yes'; ?>
+                            <?php $show_badges = isset( $settings['show_badges'] ) ? $settings['show_badges'] === 'yes' : true; // Default to true ?>
                             <label>
                                 <input type="checkbox" name="hp_ss_settings[show_badges]" value="1" <?php checked( $show_badges ); ?> />
                                 <?php esc_html_e( 'Display carrier badges next to shipping methods', 'hp-shipstation-rates' ); ?>
