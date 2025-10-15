@@ -48,6 +48,14 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         // Save settings
         add_action( 'woocommerce_update_options_shipping_' . $this->id, array( $this, 'process_admin_options' ) );
     }
+    
+    /**
+     * Modify rates to add carrier badges
+     */
+    public static function init_hooks() {
+        add_filter( 'woocommerce_package_rates', array( __CLASS__, 'add_carrier_marker' ), 10, 2 );
+        add_action( 'wp_footer', array( __CLASS__, 'add_badge_script' ), 999 );
+    }
 
     /**
      * Define settings form fields
@@ -299,6 +307,120 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         }
 
         return $filtered_rates;
+    }
+
+    /**
+     * Add carrier marker to rate labels
+     *
+     * @param array $rates Array of shipping rates
+     * @param array $package Package data
+     * @return array Modified rates
+     */
+    public static function add_carrier_marker( $rates, $package ) {
+        foreach ( $rates as $rate_key => $rate ) {
+            // Only modify our shipping method's rates
+            if ( strpos( $rate->get_method_id(), 'hp_shipstation' ) === false ) {
+                continue;
+            }
+            
+            // Get carrier from meta data
+            $meta_data = $rate->get_meta_data();
+            if ( isset( $meta_data['carrier'] ) ) {
+                $carrier = strtoupper( $meta_data['carrier'] );
+                $current_label = $rate->get_label();
+                // Add a data marker that JavaScript can detect and replace
+                $rate->set_label( '{{' . $carrier . '}} ' . $current_label );
+            }
+        }
+        
+        return $rates;
+    }
+    
+    /**
+     * Add JavaScript to convert markers to styled badges
+     */
+    public static function add_badge_script() {
+        if ( ! is_checkout() && ! is_cart() ) {
+            return;
+        }
+        ?>
+        <script type="text/javascript">
+        (function($) {
+            'use strict';
+            
+            if (typeof $ === 'undefined' || !$) {
+                return; // jQuery not loaded, exit safely
+            }
+            
+            function addCarrierBadges() {
+                try {
+                    // Try multiple selectors to find the shipping method labels
+                    var selectors = [
+                        '.woocommerce-shipping-methods li label',
+                        '#shipping_method li label',
+                        '[name="shipping_method"] label',
+                        '.shipping-methods li label',
+                        'label[for^="shipping_method"]'
+                    ];
+                    
+                    selectors.forEach(function(selector) {
+                        try {
+                            $(selector).each(function() {
+                                var $label = $(this);
+                                var html = $label.html();
+                                
+                                if (!html || typeof html !== 'string') return;
+                                
+                                // Check for USPS marker
+                                if (html.indexOf('{{USPS}}') !== -1) {
+                                    var badge = '<span class="hp-ss-badge hp-ss-usps" style="display:inline-block;background-color:#1E3A8A;color:#FFF;font-size:11px;font-weight:600;padding:2px 6px;border-radius:3px;margin-right:6px;letter-spacing:0.5px;">USPS</span>';
+                                    $label.html(html.replace(/\{\{USPS\}\}/g, badge));
+                                }
+                                // Check for UPS marker
+                                if (html.indexOf('{{UPS}}') !== -1) {
+                                    var badge = '<span class="hp-ss-badge hp-ss-ups" style="display:inline-block;background-color:#351C15;color:#FFB500;font-size:11px;font-weight:600;padding:2px 6px;border-radius:3px;margin-right:6px;letter-spacing:0.5px;">UPS</span>';
+                                    $label.html(html.replace(/\{\{UPS\}\}/g, badge));
+                                }
+                            });
+                        } catch (e) {
+                            // Silently fail for individual selectors
+                        }
+                    });
+                } catch (e) {
+                    // Silently fail if there's any error
+                }
+            }
+            
+            // Run on page load with delay
+            $(document).ready(function() {
+                setTimeout(function() {
+                    try { addCarrierBadges(); } catch(e) {}
+                }, 500);
+            });
+            
+            // Run after page fully loaded
+            $(window).on('load', function() {
+                setTimeout(function() {
+                    try { addCarrierBadges(); } catch(e) {}
+                }, 100);
+            });
+            
+            // Run after AJAX updates
+            $(document.body).on('updated_checkout updated_shipping_method update_checkout', function() {
+                setTimeout(function() {
+                    try { addCarrierBadges(); } catch(e) {}
+                }, 200);
+            });
+            
+            // For CheckoutWC specifically
+            $(document).on('cfw-updated-checkout', function() {
+                setTimeout(function() {
+                    try { addCarrierBadges(); } catch(e) {}
+                }, 200);
+            });
+        })(jQuery);
+        </script>
+        <?php
     }
 }
 
