@@ -383,12 +383,18 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             .shipping-methods li label,
             label[for^="shipping_method"] {
                 text-align: left !important;
-                justify-content: flex-start !important;
+                justify-content: space-between !important;
                 display: flex !important;
                 align-items: center !important;
             }
             .hp-ss-badge {
                 flex-shrink: 0;
+            }
+            /* Keep price on the right */
+            .woocommerce-shipping-methods li label .woocommerce-Price-amount,
+            #shipping_method li label .woocommerce-Price-amount,
+            [name="shipping_method"] label .woocommerce-Price-amount {
+                margin-left: auto !important;
             }
         </style>
         <script type="text/javascript">
