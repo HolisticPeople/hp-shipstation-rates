@@ -66,13 +66,14 @@ jobs:
         shell: bash
         run: |
           RSYNC_SSH="ssh -p $PORT"
-          rsync -avz -e "$RSYNC_SSH" --delete-excluded --exclude-from=.github/deploy-exclude.txt \
+          rsync -rltvz --no-perms --no-owner --no-group -e "$RSYNC_SSH" \
             --exclude='.git*' \
             --exclude='*.md' \
             --exclude='.github' \
             --exclude='*.zip' \
             --exclude='*.tgz' \
             --exclude='oneteam-includes.tgz' \
+            --exclude='.gitignore' \
             ./ "$USER@$HOST:$TARGET/"
 
       - name: Flush caches (WP + transients + opcache)
