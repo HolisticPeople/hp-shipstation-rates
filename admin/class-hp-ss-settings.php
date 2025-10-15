@@ -54,6 +54,8 @@ class HP_SS_Settings {
      * @return array Sanitized data
      */
     public static function sanitize_settings( $input ) {
+        // Get existing settings to preserve values not in current input
+        $existing = get_option( 'hp_ss_settings', array() );
         $sanitized = array();
 
         // API credentials
@@ -62,51 +64,62 @@ class HP_SS_Settings {
 
         // Service configurations (enabled services with custom display names)
         // Format: array( 'service_code' => array( 'enabled' => true, 'name' => 'Custom Name' ) )
-        $sanitized['service_config'] = array();
+        // Preserve existing service_config if not provided in input
         if ( isset( $input['service_config'] ) && is_array( $input['service_config'] ) ) {
+            $sanitized['service_config'] = array();
             foreach ( $input['service_config'] as $service_code => $config ) {
                 $sanitized['service_config'][ sanitize_text_field( $service_code ) ] = array(
                     'enabled' => isset( $config['enabled'] ) && $config['enabled'] === 'yes',
                     'name' => isset( $config['name'] ) ? sanitize_text_field( $config['name'] ) : ''
                 );
             }
+        } else {
+            // Preserve existing service configuration
+            $sanitized['service_config'] = isset( $existing['service_config'] ) ? $existing['service_config'] : array();
         }
 
         // Legacy support: keep old format for backward compatibility
         $sanitized['usps_services'] = isset( $input['usps_services'] ) && is_array( $input['usps_services'] ) ? array_map( 'sanitize_text_field', $input['usps_services'] ) : array();
         $sanitized['ups_services'] = isset( $input['ups_services'] ) && is_array( $input['ups_services'] ) ? array_map( 'sanitize_text_field', $input['ups_services'] ) : array();
 
-        // Default package dimensions
-        $sanitized['default_length'] = isset( $input['default_length'] ) && is_numeric( $input['default_length'] ) ? floatval( $input['default_length'] ) : 12;
-        $sanitized['default_width'] = isset( $input['default_width'] ) && is_numeric( $input['default_width'] ) ? floatval( $input['default_width'] ) : 12;
-        $sanitized['default_height'] = isset( $input['default_height'] ) && is_numeric( $input['default_height'] ) ? floatval( $input['default_height'] ) : 12;
-        $sanitized['default_weight'] = isset( $input['default_weight'] ) && is_numeric( $input['default_weight'] ) ? floatval( $input['default_weight'] ) : 1;
+        // Default package dimensions - preserve existing if not in input
+        $sanitized['default_length'] = isset( $input['default_length'] ) && is_numeric( $input['default_length'] ) ? floatval( $input['default_length'] ) : ( isset( $existing['default_length'] ) ? $existing['default_length'] : 12 );
+        $sanitized['default_width'] = isset( $input['default_width'] ) && is_numeric( $input['default_width'] ) ? floatval( $input['default_width'] ) : ( isset( $existing['default_width'] ) ? $existing['default_width'] : 12 );
+        $sanitized['default_height'] = isset( $input['default_height'] ) && is_numeric( $input['default_height'] ) ? floatval( $input['default_height'] ) : ( isset( $existing['default_height'] ) ? $existing['default_height'] : 12 );
+        $sanitized['default_weight'] = isset( $input['default_weight'] ) && is_numeric( $input['default_weight'] ) ? floatval( $input['default_weight'] ) : ( isset( $existing['default_weight'] ) ? $existing['default_weight'] : 1 );
 
-        // Debug toggle
-        $sanitized['debug_enabled'] = isset( $input['debug_enabled'] ) ? 'yes' : 'no';
+        // Checkboxes - preserve existing if not present in form (e.g., from AJAX calls)
+        // Note: Checkboxes are only present in $_POST when checked
+        // Detect if this is a full form submission by checking for default_length (always present in form)
+        $is_full_form = isset( $input['default_length'] );
         
-        // Performance: disable carriers
-        $sanitized['disable_usps'] = isset( $input['disable_usps'] ) ? 'yes' : 'no';
-        $sanitized['disable_ups'] = isset( $input['disable_ups'] ) ? 'yes' : 'no';
-        
-        // Badge display settings
-        $sanitized['show_badges'] = isset( $input['show_badges'] ) ? 'yes' : 'no';
+        if ( $is_full_form ) {
+            // Full form submission - checkboxes not present means unchecked
+            $sanitized['debug_enabled'] = isset( $input['debug_enabled'] ) ? 'yes' : 'no';
+            $sanitized['disable_usps'] = isset( $input['disable_usps'] ) ? 'yes' : 'no';
+            $sanitized['disable_ups'] = isset( $input['disable_ups'] ) ? 'yes' : 'no';
+            $sanitized['show_badges'] = isset( $input['show_badges'] ) ? 'yes' : 'no';
+        } else {
+            // Partial update (e.g., from AJAX test connection) - preserve existing values
+            $sanitized['debug_enabled'] = isset( $existing['debug_enabled'] ) ? $existing['debug_enabled'] : 'no';
+            $sanitized['disable_usps'] = isset( $existing['disable_usps'] ) ? $existing['disable_usps'] : 'no';
+            $sanitized['disable_ups'] = isset( $existing['disable_ups'] ) ? $existing['disable_ups'] : 'no';
+            $sanitized['show_badges'] = isset( $existing['show_badges'] ) ? $existing['show_badges'] : 'yes';
+        }
         
         // Handle badge file uploads
         if ( ! empty( $_FILES['usps_badge']['name'] ) ) {
             $sanitized['usps_badge'] = self::handle_badge_upload( 'usps_badge' );
-        } elseif ( isset( $sanitized['usps_badge'] ) ) {
+        } else {
             // Keep existing badge
-            $old_settings = get_option( 'hp_ss_settings', array() );
-            $sanitized['usps_badge'] = isset( $old_settings['usps_badge'] ) ? $old_settings['usps_badge'] : '';
+            $sanitized['usps_badge'] = isset( $existing['usps_badge'] ) ? $existing['usps_badge'] : '';
         }
         
         if ( ! empty( $_FILES['ups_badge']['name'] ) ) {
             $sanitized['ups_badge'] = self::handle_badge_upload( 'ups_badge' );
-        } elseif ( isset( $sanitized['ups_badge'] ) ) {
+        } else {
             // Keep existing badge
-            $old_settings = get_option( 'hp_ss_settings', array() );
-            $sanitized['ups_badge'] = isset( $old_settings['ups_badge'] ) ? $old_settings['ups_badge'] : '';
+            $sanitized['ups_badge'] = isset( $existing['ups_badge'] ) ? $existing['ups_badge'] : '';
         }
 
         return $sanitized;
