@@ -370,6 +370,22 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             : HP_SS_PLUGIN_URL . 'assets/ups-badge.png';
         
         ?>
+        <style type="text/css">
+            /* Force left alignment for shipping method labels with badges */
+            .woocommerce-shipping-methods li label,
+            #shipping_method li label,
+            [name="shipping_method"] label,
+            .shipping-methods li label,
+            label[for^="shipping_method"] {
+                text-align: left !important;
+                justify-content: flex-start !important;
+                display: flex !important;
+                align-items: center !important;
+            }
+            .hp-ss-badge {
+                flex-shrink: 0;
+            }
+        </style>
         <script type="text/javascript">
         (function($) {
             'use strict';
@@ -400,16 +416,12 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
                                 // Check for USPS marker and replace with actual badge image
                                 if (html.indexOf('{{USPS}}') !== -1) {
                                     var badge = '<img src="<?php echo esc_url( $usps_badge_url ); ?>" alt="USPS" class="hp-ss-badge hp-ss-usps" style="display:inline-block;height:24px;width:auto;vertical-align:middle;margin-right:8px;" />';
-                                    var newHtml = html.replace(/\{\{USPS\}\}/g, badge);
-                                    $label.html(newHtml);
-                                    $label.css({'text-align': 'left', 'padding-left': '0'});
+                                    $label.html(html.replace(/\{\{USPS\}\}/g, badge));
                                 }
                                 // Check for UPS marker and replace with actual badge image
                                 if (html.indexOf('{{UPS}}') !== -1) {
                                     var badge = '<img src="<?php echo esc_url( $ups_badge_url ); ?>" alt="UPS" class="hp-ss-badge hp-ss-ups" style="display:inline-block;height:24px;width:auto;vertical-align:middle;margin-right:8px;" />';
-                                    var newHtml = html.replace(/\{\{UPS\}\}/g, badge);
-                                    $label.html(newHtml);
-                                    $label.css({'text-align': 'left', 'padding-left': '0'});
+                                    $label.html(html.replace(/\{\{UPS\}\}/g, badge));
                                 }
                             });
                         } catch (e) {
