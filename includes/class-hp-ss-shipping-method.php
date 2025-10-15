@@ -149,13 +149,11 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         
         set_transient( $session_key, time(), 120 );
 
-        // ALWAYS log that calculate_shipping was called
         $start_time = microtime( true );
-        error_log( '[HP SS Method] ===== CALCULATE_SHIPPING START =====' );
-        error_log( '[HP SS Method] Package items: ' . count( $package['contents'] ) );
-        error_log( '[HP SS Method] Debug enabled: ' . ( $debug_enabled ? 'yes' : 'no' ) );
-
+        
         if ( $debug_enabled ) {
+            error_log( '[HP SS Method] ===== CALCULATE_SHIPPING START =====' );
+            error_log( '[HP SS Method] Package items: ' . count( $package['contents'] ) );
             error_log( '[HP SS Method] Full package data: ' . print_r( $package, true ) );
         }
 
@@ -238,14 +236,21 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
                 }
                 $this->add_rate( $rate );
             }
-            error_log( '[HP SS Method] Added ' . count( $all_rates ) . ' rates to checkout (sorted by price, cached for reuse)' );
+            
+            if ( $debug_enabled ) {
+                error_log( '[HP SS Method] Added ' . count( $all_rates ) . ' rates to checkout (sorted by price, cached for reuse)' );
+            }
         } else {
-            error_log( '[HP SS Method] No rates returned from ShipStation' );
+            if ( $debug_enabled ) {
+                error_log( '[HP SS Method] No rates returned from ShipStation' );
+            }
         }
 
-        $end_time = microtime( true );
-        $duration = round( ( $end_time - $start_time ) * 1000, 2 );
-        error_log( '[HP SS Method] ===== CALCULATE_SHIPPING END (took ' . $duration . 'ms) =====' );
+        if ( $debug_enabled ) {
+            $end_time = microtime( true );
+            $duration = round( ( $end_time - $start_time ) * 1000, 2 );
+            error_log( '[HP SS Method] ===== CALCULATE_SHIPPING END (took ' . $duration . 'ms) =====' );
+        }
     }
 
     /**

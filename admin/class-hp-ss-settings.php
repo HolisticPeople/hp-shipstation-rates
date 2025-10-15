@@ -54,7 +54,6 @@ class HP_SS_Settings {
      * @return array Sanitized data
      */
     public static function sanitize_settings( $input ) {
-        error_log( '[HP SS Settings] sanitize_settings called with input: ' . print_r( $input, true ) );
         $sanitized = array();
 
         // API credentials
@@ -117,9 +116,7 @@ class HP_SS_Settings {
      * Render settings page
      */
     public static function render_settings_page() {
-        error_log( '[HP SS Settings] Settings page render called' );
         $settings = get_option( 'hp_ss_settings', array() );
-        error_log( '[HP SS Settings] Current settings: ' . print_r( $settings, true ) );
         $api_key = isset( $settings['api_key'] ) ? $settings['api_key'] : '';
         $api_secret = isset( $settings['api_secret'] ) ? $settings['api_secret'] : '';
         $usps_services = isset( $settings['usps_services'] ) ? $settings['usps_services'] : array();
@@ -598,7 +595,6 @@ class HP_SS_Settings {
      * AJAX handler for testing API connection
      */
     public static function ajax_test_connection() {
-        error_log( '[HP SS AJAX] Test connection handler called' );
         check_ajax_referer( 'hp-ss-test-connection', 'nonce' );
 
         if ( ! current_user_can( 'manage_woocommerce' ) ) {
@@ -628,7 +624,6 @@ class HP_SS_Settings {
      * AJAX handler for fetching available services from ShipStation
      */
     public static function ajax_fetch_services() {
-        error_log( '[HP SS AJAX] Fetch services handler called' );
         check_ajax_referer( 'hp-ss-test-connection', 'nonce' );
 
         if ( ! current_user_can( 'manage_woocommerce' ) ) {
