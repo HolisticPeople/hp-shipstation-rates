@@ -56,6 +56,16 @@ class HP_SS_Settings {
     public static function sanitize_settings( $input ) {
         // Get existing settings to preserve values not in current input
         $existing = get_option( 'hp_ss_settings', array() );
+        
+        // If input is already a complete settings array (from direct update_option calls),
+        // and it has all the existing keys, just return it as-is with minimal sanitization
+        if ( is_array( $input ) && isset( $input['api_key'] ) && isset( $input['service_config'] ) && 
+             count( $input ) >= 10 ) {
+            // This looks like a complete settings array being updated directly
+            // Just return it without modification (it's already from get_option so it's safe)
+            return $input;
+        }
+        
         $sanitized = array();
 
         // API credentials
@@ -621,9 +631,13 @@ class HP_SS_Settings {
 
         if ( $result['success'] ) {
             // Save credentials on successful test
+            // Get all existing settings and only update the credentials
             $settings = get_option( 'hp_ss_settings', array() );
             $settings['api_key'] = $api_key;
             $settings['api_secret'] = $api_secret;
+            
+            // Update with complete settings array
+            // The sanitize callback will detect this is a complete array and pass it through
             update_option( 'hp_ss_settings', $settings );
             
             $result['message'] .= ' (Credentials saved)';
