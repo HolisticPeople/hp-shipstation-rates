@@ -121,3 +121,4 @@ If you want to change the badge appearance, you can:
 
 The badges should work flawlessly without any console noise! 🎯
 
+

@@ -8,3 +8,4 @@ WooCommerce → ShipStation Rates → Carrier Badges section
 
 The plugin will automatically use these default badges if no custom badges are uploaded via the admin.
 
+

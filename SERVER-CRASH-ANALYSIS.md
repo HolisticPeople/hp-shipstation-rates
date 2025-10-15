@@ -159,3 +159,4 @@ Once server is healthy:
 **Plugin Health:** ✅ Code is fine, no errors detected  
 **Next:** User to contact Kinsta support
 
+

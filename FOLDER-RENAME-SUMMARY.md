@@ -157,3 +157,4 @@ The old `OneTeam-api-fix/` folder is still present due to Windows file locks. Yo
 
 **The plugin is now properly named `hp-shipstation-rates` throughout!**
 
+

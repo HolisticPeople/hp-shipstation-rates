@@ -20,3 +20,4 @@ Recommended specifications:
 - Size: 40-60px wide × 18-24px tall
 - Design: High contrast, simple, readable at small size
 
+

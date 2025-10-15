@@ -140,3 +140,4 @@ Moving to custom badge images will make the badges prettier, but **will NOT fix 
 
 See `CUSTOM-BADGE-GUIDE.md` for specifications on providing your own badge images.
 
+
