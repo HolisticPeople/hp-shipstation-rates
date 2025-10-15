@@ -167,7 +167,7 @@ class HP_SS_Client {
             ) );
         }
 
-        // Cache the rates for 90 seconds
+        // Cache the rates for 90 seconds (for testing - increase for production)
         set_transient( $cache_key, $rates, 90 );
 
         return $rates;
