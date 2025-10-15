@@ -89,6 +89,26 @@ class HP_SS_Settings {
         // Performance: disable carriers
         $sanitized['disable_usps'] = isset( $input['disable_usps'] ) ? 'yes' : 'no';
         $sanitized['disable_ups'] = isset( $input['disable_ups'] ) ? 'yes' : 'no';
+        
+        // Badge display settings
+        $sanitized['show_badges'] = isset( $input['show_badges'] ) ? 'yes' : 'no';
+        
+        // Handle badge file uploads
+        if ( ! empty( $_FILES['usps_badge']['name'] ) ) {
+            $sanitized['usps_badge'] = self::handle_badge_upload( 'usps_badge' );
+        } elseif ( isset( $sanitized['usps_badge'] ) ) {
+            // Keep existing badge
+            $old_settings = get_option( 'hp_ss_settings', array() );
+            $sanitized['usps_badge'] = isset( $old_settings['usps_badge'] ) ? $old_settings['usps_badge'] : '';
+        }
+        
+        if ( ! empty( $_FILES['ups_badge']['name'] ) ) {
+            $sanitized['ups_badge'] = self::handle_badge_upload( 'ups_badge' );
+        } elseif ( isset( $sanitized['ups_badge'] ) ) {
+            // Keep existing badge
+            $old_settings = get_option( 'hp_ss_settings', array() );
+            $sanitized['ups_badge'] = isset( $old_settings['ups_badge'] ) ? $old_settings['ups_badge'] : '';
+        }
 
         return $sanitized;
     }
@@ -123,7 +143,7 @@ class HP_SS_Settings {
         <div class="wrap">
             <h1><?php esc_html_e( 'HP ShipStation Rates Settings', 'hp-shipstation-rates' ); ?> <small style="color: #666; font-weight: normal;">v<?php echo esc_html( HP_SS_VERSION ); ?></small></h1>
             
-            <form method="post" action="options.php">
+            <form method="post" action="options.php" enctype="multipart/form-data">
                 <?php settings_fields( 'hp_ss_settings_group' ); ?>
                 
                 <table class="form-table" role="presentation">
@@ -322,6 +342,73 @@ class HP_SS_Settings {
                                     '<code>wp-content/debug.log</code>'
                                 ); 
                                 ?>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Badge Display Settings Section -->
+                    <tr>
+                        <th colspan="2">
+                            <h2><?php esc_html_e( 'Carrier Badges', 'hp-shipstation-rates' ); ?></h2>
+                        </th>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row"><?php esc_html_e( 'Show Carrier Badges', 'hp-shipstation-rates' ); ?></th>
+                        <td>
+                            <?php $show_badges = isset( $settings['show_badges'] ) && $settings['show_badges'] === 'yes'; ?>
+                            <label>
+                                <input type="checkbox" name="hp_ss_settings[show_badges]" value="1" <?php checked( $show_badges ); ?> />
+                                <?php esc_html_e( 'Display carrier badges next to shipping methods', 'hp-shipstation-rates' ); ?>
+                            </label>
+                            <p class="description">
+                                <?php esc_html_e( 'Shows USPS/UPS logos before the shipping method names on checkout.', 'hp-shipstation-rates' ); ?>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row"><?php esc_html_e( 'USPS Badge', 'hp-shipstation-rates' ); ?></th>
+                        <td>
+                            <?php 
+                            $usps_badge = isset( $settings['usps_badge'] ) ? $settings['usps_badge'] : '';
+                            if ( $usps_badge ) {
+                                echo '<p><img src="' . esc_url( $usps_badge ) . '" alt="USPS Badge" style="max-height: 40px; background: #fff; padding: 5px; border: 1px solid #ddd;" /></p>';
+                            } else {
+                                // Check for default badge in assets folder
+                                $default_badge = HP_SS_PLUGIN_URL . 'assets/usps-badge.png';
+                                if ( file_exists( HP_SS_PLUGIN_DIR . 'assets/usps-badge.png' ) ) {
+                                    echo '<p><img src="' . esc_url( $default_badge ) . '" alt="USPS Badge" style="max-height: 40px; background: #fff; padding: 5px; border: 1px solid #ddd;" /></p>';
+                                    echo '<p class="description">' . esc_html__( 'Using default USPS badge', 'hp-shipstation-rates' ) . '</p>';
+                                }
+                            }
+                            ?>
+                            <input type="file" name="usps_badge" accept="image/*" />
+                            <p class="description">
+                                <?php esc_html_e( 'Upload a custom USPS badge (PNG, JPG, SVG, or WebP). Recommended: 40-60px wide × 18-24px tall.', 'hp-shipstation-rates' ); ?>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row"><?php esc_html_e( 'UPS Badge', 'hp-shipstation-rates' ); ?></th>
+                        <td>
+                            <?php 
+                            $ups_badge = isset( $settings['ups_badge'] ) ? $settings['ups_badge'] : '';
+                            if ( $ups_badge ) {
+                                echo '<p><img src="' . esc_url( $ups_badge ) . '" alt="UPS Badge" style="max-height: 40px; background: #fff; padding: 5px; border: 1px solid #ddd;" /></p>';
+                            } else {
+                                // Check for default badge in assets folder
+                                $default_badge = HP_SS_PLUGIN_URL . 'assets/ups-badge.png';
+                                if ( file_exists( HP_SS_PLUGIN_DIR . 'assets/ups-badge.png' ) ) {
+                                    echo '<p><img src="' . esc_url( $default_badge ) . '" alt="UPS Badge" style="max-height: 40px; background: #fff; padding: 5px; border: 1px solid #ddd;" /></p>';
+                                    echo '<p class="description">' . esc_html__( 'Using default UPS badge', 'hp-shipstation-rates' ) . '</p>';
+                                }
+                            }
+                            ?>
+                            <input type="file" name="ups_badge" accept="image/*" />
+                            <p class="description">
+                                <?php esc_html_e( 'Upload a custom UPS badge (PNG, JPG, SVG, or WebP). Recommended: 40-60px wide × 18-24px tall.', 'hp-shipstation-rates' ); ?>
                             </p>
                         </td>
                     </tr>
@@ -631,6 +718,47 @@ class HP_SS_Settings {
         // JavaScript is now inline in the settings page, no external file needed
         // Keeping this function for potential future use
         return;
+    }
+    
+    /**
+     * Handle badge file upload
+     *
+     * @param string $file_key The $_FILES array key
+     * @return string The uploaded file URL or empty string on failure
+     */
+    private static function handle_badge_upload( $file_key ) {
+        if ( ! function_exists( 'wp_handle_upload' ) ) {
+            require_once( ABSPATH . 'wp-admin/includes/file.php' );
+        }
+        
+        $uploadedfile = $_FILES[ $file_key ];
+        $upload_overrides = array(
+            'test_form' => false,
+            'mimes' => array(
+                'jpg|jpeg|jpe' => 'image/jpeg',
+                'png' => 'image/png',
+                'svg' => 'image/svg+xml',
+                'webp' => 'image/webp'
+            )
+        );
+        
+        // Move uploaded file to plugin assets directory
+        $plugin_dir = HP_SS_PLUGIN_DIR . 'assets/';
+        $filename = $file_key . '.' . pathinfo( $uploadedfile['name'], PATHINFO_EXTENSION );
+        $target_file = $plugin_dir . $filename;
+        
+        // Ensure directory exists
+        if ( ! file_exists( $plugin_dir ) ) {
+            wp_mkdir_p( $plugin_dir );
+        }
+        
+        // Move the file
+        if ( move_uploaded_file( $uploadedfile['tmp_name'], $target_file ) ) {
+            // Return the URL to the uploaded file
+            return HP_SS_PLUGIN_URL . 'assets/' . $filename;
+        }
+        
+        return '';
     }
 }
 

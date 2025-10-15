@@ -1,19 +1,16 @@
-# Backups
-*.tgz
-*.zip
-*.bak
-*.backup
-*-backup-*
+# Uploaded badge files (keep defaults in repo)
+assets/usps_badge.*
+assets/ups_badge.*
+
+# WordPress debug log
+debug.log
+error_log
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# IDE
+# IDE files
 .vscode/
 .idea/
-
-# Logs
-*.log
-debug.log
-
+*.code-workspace

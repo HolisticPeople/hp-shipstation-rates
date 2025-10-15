@@ -337,12 +337,30 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
     }
     
     /**
-     * Add JavaScript to convert markers to styled badges
+     * Add JavaScript to convert markers to badge images
      */
     public static function add_badge_script() {
         if ( ! is_checkout() && ! is_cart() ) {
             return;
         }
+        
+        // Check if badges are enabled
+        $settings = get_option( 'hp_ss_settings', array() );
+        $show_badges = isset( $settings['show_badges'] ) && $settings['show_badges'] === 'yes';
+        
+        if ( ! $show_badges ) {
+            return; // Badges disabled, don't output script
+        }
+        
+        // Get badge URLs (custom or default)
+        $usps_badge_url = isset( $settings['usps_badge'] ) && ! empty( $settings['usps_badge'] ) 
+            ? $settings['usps_badge'] 
+            : HP_SS_PLUGIN_URL . 'assets/usps-badge.png';
+        
+        $ups_badge_url = isset( $settings['ups_badge'] ) && ! empty( $settings['ups_badge'] ) 
+            ? $settings['ups_badge'] 
+            : HP_SS_PLUGIN_URL . 'assets/ups-badge.png';
+        
         ?>
         <script type="text/javascript">
         (function($) {
@@ -371,14 +389,14 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
                                 
                                 if (!html || typeof html !== 'string') return;
                                 
-                                // Check for USPS marker and replace with SVG image badge
+                                // Check for USPS marker and replace with actual badge image
                                 if (html.indexOf('{{USPS}}') !== -1) {
-                                    var badge = '<img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCA0OCAyMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDgiIGhlaWdodD0iMjAiIHJ4PSIzIiBmaWxsPSIjMDAzNDgxIi8+PHRleHQgeD0iMjQiIHk9IjE0IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiNGRkZGRkYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjxzdHlsZT50ZXh0e2xldHRlci1zcGFjaW5nOjAuNXB4fTwvc3R5bGU+VVNQUDE8L3RleHQ+PC9zdmc+" alt="USPS" style="display:inline-block;height:18px;width:auto;vertical-align:middle;margin-right:6px;" />';
+                                    var badge = '<img src="<?php echo esc_url( $usps_badge_url ); ?>" alt="USPS" class="hp-ss-badge hp-ss-usps" style="display:inline-block;height:20px;width:auto;vertical-align:middle;margin-right:6px;" />';
                                     $label.html(html.replace(/\{\{USPS\}\}/g, badge));
                                 }
-                                // Check for UPS marker and replace with SVG image badge
+                                // Check for UPS marker and replace with actual badge image
                                 if (html.indexOf('{{UPS}}') !== -1) {
-                                    var badge = '<img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDIiIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCA0MiAyMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDIiIGhlaWdodD0iMjAiIHJ4PSIzIiBmaWxsPSIjMzUxQzE1Ii8+PHRleHQgeD0iMjEiIHk9IjE0IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiNGRkI1MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjxzdHlsZT50ZXh0e2xldHRlci1zcGFjaW5nOjAuNXB4fTwvc3R5bGU+VVBTIDwvdGV4dD48L3N2Zz4=" alt="UPS" style="display:inline-block;height:18px;width:auto;vertical-align:middle;margin-right:6px;" />';
+                                    var badge = '<img src="<?php echo esc_url( $ups_badge_url ); ?>" alt="UPS" class="hp-ss-badge hp-ss-ups" style="display:inline-block;height:20px;width:auto;vertical-align:middle;margin-right:6px;" />';
                                     $label.html(html.replace(/\{\{UPS\}\}/g, badge));
                                 }
                             });

@@ -1,0 +1,10 @@
+Upload the badge images here:
+
+1. Save the USPS badge as: usps-badge.png
+2. Save the UPS badge as: ups-badge.png
+
+Or upload them via the WordPress admin:
+WooCommerce → ShipStation Rates → Carrier Badges section
+
+The plugin will automatically use these default badges if no custom badges are uploaded via the admin.
+
