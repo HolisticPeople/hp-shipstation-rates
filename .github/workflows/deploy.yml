@@ -88,7 +88,7 @@ jobs:
           
           ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
             ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
-            "if [ -d '$PLUGIN_PATH' ]; then cp -rn '$PLUGIN_PATH' '$PLUGIN_PATH.bak.\$(date +%Y%m%d-%H%M%S)'; echo 'Backup created'; else echo 'No existing plugin to backup'; fi"
+            "if [ -d '$PLUGIN_PATH' ]; then cp -rn '$PLUGIN_PATH' '$PLUGIN_PATH.bak.$(date +%Y%m%d-%H%M%S)'; echo 'Backup created'; else echo 'No existing plugin to backup'; fi"
 
       - name: Deploy to ${{ steps.vars.outputs.environment }}
         run: |
@@ -102,8 +102,8 @@ jobs:
             ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
             "mkdir -p $PLUGIN_PATH"
           
-          # Deploy files using rsync
-          rsync -avz --delete \
+          # Deploy files using rsync (NO --delete to prevent accidental deletion)
+          rsync -avz \
             -e "ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }}" \
             --exclude-from='.github/deploy-exclude.txt' \
             ./ ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }}:$PLUGIN_PATH/
