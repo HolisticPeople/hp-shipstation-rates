@@ -371,14 +371,14 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
                                 
                                 if (!html || typeof html !== 'string') return;
                                 
-                                // Check for USPS marker
+                                // Check for USPS marker and replace with SVG image badge
                                 if (html.indexOf('{{USPS}}') !== -1) {
-                                    var badge = '<span class="hp-ss-badge hp-ss-usps" style="display:inline-block;background-color:#1E3A8A;color:#FFF;font-size:11px;font-weight:600;padding:2px 6px;border-radius:3px;margin-right:6px;letter-spacing:0.5px;">USPS</span>';
+                                    var badge = '<img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCA0OCAyMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDgiIGhlaWdodD0iMjAiIHJ4PSIzIiBmaWxsPSIjMDAzNDgxIi8+PHRleHQgeD0iMjQiIHk9IjE0IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiNGRkZGRkYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjxzdHlsZT50ZXh0e2xldHRlci1zcGFjaW5nOjAuNXB4fTwvc3R5bGU+VVNQUDE8L3RleHQ+PC9zdmc+" alt="USPS" style="display:inline-block;height:18px;width:auto;vertical-align:middle;margin-right:6px;" />';
                                     $label.html(html.replace(/\{\{USPS\}\}/g, badge));
                                 }
-                                // Check for UPS marker
+                                // Check for UPS marker and replace with SVG image badge
                                 if (html.indexOf('{{UPS}}') !== -1) {
-                                    var badge = '<span class="hp-ss-badge hp-ss-ups" style="display:inline-block;background-color:#351C15;color:#FFB500;font-size:11px;font-weight:600;padding:2px 6px;border-radius:3px;margin-right:6px;letter-spacing:0.5px;">UPS</span>';
+                                    var badge = '<img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDIiIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCA0MiAyMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDIiIGhlaWdodD0iMjAiIHJ4PSIzIiBmaWxsPSIjMzUxQzE1Ii8+PHRleHQgeD0iMjEiIHk9IjE0IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiNGRkI1MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjxzdHlsZT50ZXh0e2xldHRlci1zcGFjaW5nOjAuNXB4fTwvc3R5bGU+VVBTIDwvdGV4dD48L3N2Zz4=" alt="UPS" style="display:inline-block;height:18px;width:auto;vertical-align:middle;margin-right:6px;" />';
                                     $label.html(html.replace(/\{\{UPS\}\}/g, badge));
                                 }
                             });
