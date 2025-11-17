@@ -3,7 +3,7 @@
  * Plugin Name: HP ShipStation Rates
  * Plugin URI: https://holisticpeople.com/
  * Description: Minimal WooCommerce shipping method that fetches real-time USPS and UPS quotes from ShipStation V1 API (with quick mode to prevent ghost orders).
- * Version: 2.4.3
+ * Version: 2.4.4
  * Author: Holistic People
  * Author URI: https://holisticpeople.com/
  * Text Domain: hp-shipstation-rates
@@ -22,7 +22,7 @@ if ( ! defined( 'WPINC' ) ) {
 }
 
 // Define plugin constants
-define( 'HP_SS_VERSION', '2.4.3' );
+define( 'HP_SS_VERSION', '2.4.4' );
 define( 'HP_SS_PLUGIN_FILE', __FILE__ );
 define( 'HP_SS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HP_SS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -91,4 +91,46 @@ function hp_ss_plugin_action_links( $links ) {
     return $links;
 }
 add_filter( 'plugin_action_links_' . HP_SS_PLUGIN_BASENAME, 'hp_ss_plugin_action_links' );
+
+/**
+ * Helper: Return enabled ShipStation service codes as configured in this plugin.
+ * - Single source of truth for other plugins (e.g., HP Funnel Bridge)
+ * - Reads hp_ss_settings['service_config'] (preferred) where each entry is:
+ *     [service_code] => ['enabled' => bool, 'name' => 'Custom Name']
+ * - For legacy installs, also considers 'usps_services' and 'ups_services' arrays
+ *
+ * @return string[] Lowercase service codes, e.g. ['usps_priority_mail','usps_ground_advantage']
+ */
+function hp_ss_get_enabled_service_codes(): array {
+    $settings = get_option( 'hp_ss_settings', array() );
+    $codes = array();
+
+    // Preferred: service_config structure
+    if ( isset( $settings['service_config'] ) && is_array( $settings['service_config'] ) ) {
+        foreach ( $settings['service_config'] as $service_code => $config ) {
+            $enabled = isset( $config['enabled'] ) && ( $config['enabled'] === true || $config['enabled'] === 'yes' || $config['enabled'] === 1 || $config['enabled'] === '1' );
+            if ( $enabled ) {
+                $codes[] = strtolower( trim( (string) $service_code ) );
+            }
+        }
+    }
+
+    // Legacy (back-compat) – prior settings used flat arrays
+    if ( empty( $codes ) ) {
+        if ( ! empty( $settings['usps_services'] ) && is_array( $settings['usps_services'] ) ) {
+            foreach ( $settings['usps_services'] as $code ) {
+                $codes[] = strtolower( trim( (string) $code ) );
+            }
+        }
+        if ( ! empty( $settings['ups_services'] ) && is_array( $settings['ups_services'] ) ) {
+            foreach ( $settings['ups_services'] as $code ) {
+                $codes[] = strtolower( trim( (string) $code ) );
+            }
+        }
+    }
+
+    // Normalize and return unique list
+    $codes = array_values( array_unique( array_filter( $codes, function( $c ) { return $c !== ''; } ) ) );
+    return $codes;
+}
 
