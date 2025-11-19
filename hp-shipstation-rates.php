@@ -3,7 +3,7 @@
  * Plugin Name: HP ShipStation Rates
  * Plugin URI: https://holisticpeople.com/
  * Description: Minimal WooCommerce shipping method that fetches real-time USPS and UPS quotes from ShipStation V1 API (with quick mode to prevent ghost orders).
- * Version: 2.4.4
+ * Version: 2.4.5
  * Author: Holistic People
  * Author URI: https://holisticpeople.com/
  * Text Domain: hp-shipstation-rates
@@ -22,7 +22,7 @@ if ( ! defined( 'WPINC' ) ) {
 }
 
 // Define plugin constants
-define( 'HP_SS_VERSION', '2.4.4' );
+define( 'HP_SS_VERSION', '2.4.5' );
 define( 'HP_SS_PLUGIN_FILE', __FILE__ );
 define( 'HP_SS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HP_SS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -81,39 +81,36 @@ add_filter( 'woocommerce_shipping_methods', 'hp_ss_register_shipping_method' );
 
 /**
  * ShipStation export compatibility:
- * Exclude non-physical fee lines such as global discounts and upsell bundle
- * labels from being exported as products to ShipStation.
+ * Exclude any WooCommerce order line that does not have a SKU from being
+ * exported as a product to ShipStation.
  *
  * The official WooCommerce ShipStation integration exposes the
  * 'woocommerce_shipstation_export_line_item' filter. Returning false from
  * this filter will prevent a line from being exported.
  *
  * We use this to hide:
- * - The global 10% discount fee line: \"Global discount (10%)\"
- * - The upsell bundle summary line: \"Off The Fast Kit\"
+ * - Discount/upsell fee lines (which are WC_Order_Item_Fee entries)
+ * - Any other non-product rows that do not have a SKU
  *
- * The underlying physical products (Magnesium, Zeolite, Digestxym, Triphala, etc.)
- * are still exported as normal product lines and will be picked and shipped.
+ * This makes the behavior future‑proof for additional funnels: as long as
+ * funnel‑specific lines do not carry a SKU, they will not appear as separate
+ * products in ShipStation. Only real products with SKUs will be exported.
  */
 if ( ! function_exists( 'hp_ss_filter_shipstation_export_line_item' ) ) {
     function hp_ss_filter_shipstation_export_line_item( $line_item, $item, $order ) {
-        // Only act for fee items; products should pass through untouched.
-        if ( ! $item instanceof WC_Order_Item_Fee ) {
-            return $line_item;
+        // Product line: only export if the underlying product has a non-empty SKU.
+        if ( $item instanceof WC_Order_Item_Product ) {
+            $product = $item->get_product();
+            if ( ! $product ) {
+                return false;
+            }
+            $sku = trim( (string) $product->get_sku() );
+            return $sku === '' ? false : $line_item;
         }
 
-        $name = strtolower( (string) $item->get_name() );
-
-        // Match our known non-physical fee rows by name.
-        if (
-            strpos( $name, 'global discount' ) !== false ||
-            strpos( $name, 'off the fast kit' ) !== false
-        ) {
-            // Returning false tells the ShipStation exporter to skip this line.
-            return false;
-        }
-
-        return $line_item;
+        // For all non-product lines (fees, shipping, etc.), skip export so they
+        // don't appear as pseudo-products in ShipStation.
+        return false;
     }
     add_filter( 'woocommerce_shipstation_export_line_item', 'hp_ss_filter_shipstation_export_line_item', 10, 3 );
 }
