@@ -79,6 +79,45 @@ function hp_ss_register_shipping_method( $methods ) {
 }
 add_filter( 'woocommerce_shipping_methods', 'hp_ss_register_shipping_method' );
 
+/**
+ * ShipStation export compatibility:
+ * Exclude non-physical fee lines such as global discounts and upsell bundle
+ * labels from being exported as products to ShipStation.
+ *
+ * The official WooCommerce ShipStation integration exposes the
+ * 'woocommerce_shipstation_export_line_item' filter. Returning false from
+ * this filter will prevent a line from being exported.
+ *
+ * We use this to hide:
+ * - The global 10% discount fee line: \"Global discount (10%)\"
+ * - The upsell bundle summary line: \"Off The Fast Kit\"
+ *
+ * The underlying physical products (Magnesium, Zeolite, Digestxym, Triphala, etc.)
+ * are still exported as normal product lines and will be picked and shipped.
+ */
+if ( ! function_exists( 'hp_ss_filter_shipstation_export_line_item' ) ) {
+    function hp_ss_filter_shipstation_export_line_item( $line_item, $item, $order ) {
+        // Only act for fee items; products should pass through untouched.
+        if ( ! $item instanceof WC_Order_Item_Fee ) {
+            return $line_item;
+        }
+
+        $name = strtolower( (string) $item->get_name() );
+
+        // Match our known non-physical fee rows by name.
+        if (
+            strpos( $name, 'global discount' ) !== false ||
+            strpos( $name, 'off the fast kit' ) !== false
+        ) {
+            // Returning false tells the ShipStation exporter to skip this line.
+            return false;
+        }
+
+        return $line_item;
+    }
+    add_filter( 'woocommerce_shipstation_export_line_item', 'hp_ss_filter_shipstation_export_line_item', 10, 3 );
+}
+
 // Initialize shipping method hooks
 add_action( 'woocommerce_init', array( 'HP_SS_Shipping_Method', 'init_hooks' ) );
 
