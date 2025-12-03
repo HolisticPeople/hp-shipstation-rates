@@ -274,7 +274,12 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
 
             $service_code = $rate['serviceCode'];
             $service_name = $rate['serviceName'];
-            $cost = floatval( $rate['shipmentCost'] );
+            // ShipStation returns the base postage in shipmentCost and any surcharges
+            // (fuel, remote area, additional handling, etc.) in otherCost.
+            // To quote what ShipStation will actually bill, we need to add both.
+            $shipment_cost = floatval( $rate['shipmentCost'] );
+            $other_cost    = isset( $rate['otherCost'] ) ? floatval( $rate['otherCost'] ) : 0.0;
+            $cost          = $shipment_cost + $other_cost;
 
             // Check new format first (service_config)
             $is_enabled = false;
@@ -299,7 +304,10 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
                     'meta_data' => array(
                         'carrier' => $carrier_name,
                         'service_code' => $service_code,
-                        'original_name' => $service_name
+                        'original_name' => $service_name,
+                        // Store breakdown for debugging / future display if needed.
+                        'shipment_cost' => $shipment_cost,
+                        'other_cost' => $other_cost,
                     )
                 );
                 if ( $debug_enabled ) {
