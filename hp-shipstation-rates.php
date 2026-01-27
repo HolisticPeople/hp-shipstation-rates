@@ -3,7 +3,7 @@
  * Plugin Name: HP ShipStation Rates
  * Plugin URI: https://holisticpeople.com/
  * Description: Minimal WooCommerce shipping method that fetches real-time USPS and UPS quotes from ShipStation V1 API (with quick mode to prevent ghost orders).
- * Version: 2.4.8
+ * Version: 2.4.9
  * Author: Holistic People
  * Author URI: https://holisticpeople.com/
  * Text Domain: hp-shipstation-rates
