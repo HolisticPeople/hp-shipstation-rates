@@ -176,7 +176,7 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         // Normalize Puerto Rico: ShipStation expects country=US and state=PR
         if ( strtoupper( $to_address['country'] ) === 'PR' ) {
             if ( $debug_enabled ) {
-                error_log( '[HP SS Method] Normalizing Puerto Rico address for ShipStation API' );
+                error_log( '[HP SS Method] Normalizing Puerto Rico address for ShipStation API from ' . $to_address['country'] . '/' . $to_address['state'] . ' to US/PR' );
             }
             $to_address['country'] = 'US';
             $to_address['state']   = 'PR';
