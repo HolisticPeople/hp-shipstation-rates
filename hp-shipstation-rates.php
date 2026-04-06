@@ -3,7 +3,7 @@
  * Plugin Name: HP ShipStation Rates
  * Plugin URI: https://holisticpeople.com/
  * Description: Minimal WooCommerce shipping method that fetches real-time USPS and UPS quotes from ShipStation V1 API (with quick mode to prevent ghost orders).
- * Version: 2.5.0
+ * Version: 2.5.3
  * Author: Holistic People
  * Author URI: https://holisticpeople.com/
  * Text Domain: hp-shipstation-rates
@@ -11,7 +11,7 @@
  * Requires at least: 5.8
  * Requires PHP: 7.4
  * WC requires at least: 6.0
- * WC tested up to: 8.5
+ * WC tested up to: 10.5
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  */
@@ -22,11 +22,18 @@ if ( ! defined( 'WPINC' ) ) {
 }
 
 // Define plugin constants
-define( 'HP_SS_VERSION', '2.4.8' );
+define( 'HP_SS_VERSION', '2.5.3' );
 define( 'HP_SS_PLUGIN_FILE', __FILE__ );
 define( 'HP_SS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HP_SS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'HP_SS_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
+
+// Declare WooCommerce feature compatibility (HPOS)
+add_action( 'before_woocommerce_init', function () {
+    if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
+    }
+} );
 
 /**
  * Check if WooCommerce is active
@@ -93,6 +100,45 @@ function hp_ss_plugin_action_links( $links ) {
 add_filter( 'plugin_action_links_' . HP_SS_PLUGIN_BASENAME, 'hp_ss_plugin_action_links' );
 
 /**
+ * Return the shared ShipStation credentials, preferring HP Core.
+ *
+ * @return array{api_key:string,api_secret:string,source:string}
+ */
+function hp_ss_get_shipstation_credentials(): array {
+    $settings = class_exists( '\HP_Core\Services\ShipStationSettings' )
+        ? \HP_Core\Services\ShipStationSettings::get_settings()
+        : get_option( 'hp_core_shipstation_settings', array() );
+
+    return array(
+        'api_key' => isset( $settings['api_key'] ) ? (string) $settings['api_key'] : '',
+        'api_secret' => isset( $settings['api_secret'] ) ? (string) $settings['api_secret'] : '',
+        'source' => isset( $settings['source'] ) ? (string) $settings['source'] : 'hp_core',
+    );
+}
+
+/**
+ * Update ShipStation credentials in the canonical store.
+ *
+ * @param string $api_key API key.
+ * @param string $api_secret API secret.
+ * @return bool
+ */
+function hp_ss_update_shipstation_credentials( string $api_key, string $api_secret ): bool {
+    if ( class_exists( '\HP_Core\Services\ShipStationSettings' ) ) {
+        return (bool) \HP_Core\Services\ShipStationSettings::update_credentials( $api_key, $api_secret, 'hp_shipstation_rates' );
+    }
+
+    return (bool) update_option(
+        'hp_core_shipstation_settings',
+        array(
+            'api_key' => sanitize_text_field( $api_key ),
+            'api_secret' => sanitize_text_field( $api_secret ),
+            'source' => 'hp_shipstation_rates',
+        )
+    );
+}
+
+/**
  * Helper: Return enabled ShipStation service codes as configured in this plugin.
  * - Single source of truth for other plugins (e.g., HP Funnel Bridge)
  * - Reads hp_ss_settings['service_config'] (preferred) where each entry is:
@@ -133,4 +179,3 @@ function hp_ss_get_enabled_service_codes(): array {
     $codes = array_values( array_unique( array_filter( $codes, function( $c ) { return $c !== ''; } ) ) );
     return $codes;
 }
-

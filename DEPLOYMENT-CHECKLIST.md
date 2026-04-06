@@ -30,8 +30,9 @@ ssh -p 12872 holisticpeoplecom@35.236.219.140 \
 **Via SSH (automated):**
 ```bash
 ssh -p 12872 holisticpeoplecom@35.236.219.140 \
-  "cd public && wp option patch insert hp_ss_settings api_key 'YOUR_API_KEY' --allow-root && \
-   wp option patch insert hp_ss_settings api_secret 'YOUR_API_SECRET' --allow-root && \
+  "cd public && wp option patch insert hp_core_shipstation_settings api_key 'YOUR_API_KEY' --allow-root && \
+   wp option patch insert hp_core_shipstation_settings api_secret 'YOUR_API_SECRET' --allow-root && \
+   wp option patch insert hp_core_shipstation_settings source 'hp_shipstation_rates' --allow-root && \
    wp option patch insert hp_ss_settings debug_enabled 'yes' --allow-root"
 ```
 

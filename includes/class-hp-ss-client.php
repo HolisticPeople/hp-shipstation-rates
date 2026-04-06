@@ -28,14 +28,22 @@ class HP_SS_Client {
      * @param array $to_address To address array
      * @param array $package Package data (weight, dimensions)
      * @param string $carrier_code Carrier code ('stamps_com' for USPS, 'ups_walleted' for UPS)
+     * @param array|null $credentials Optional credentials override
      * @return array|WP_Error Array of rates or WP_Error on failure
      */
-    public static function get_rates( $from_address, $to_address, $package, $carrier_code ) {
-        // Get API credentials
-        $settings = get_option( 'hp_ss_settings', array() );
-        $api_key = isset( $settings['api_key'] ) ? $settings['api_key'] : '';
-        $api_secret = isset( $settings['api_secret'] ) ? $settings['api_secret'] : '';
-        $debug_enabled = isset( $settings['debug_enabled'] ) && $settings['debug_enabled'] === 'yes';
+    public static function get_rates( $from_address, $to_address, $package, $carrier_code, $credentials = null ) {
+        $plugin_settings = get_option( 'hp_ss_settings', array() );
+        $resolved_credentials = is_array( $credentials ) ? $credentials : array();
+
+        if ( empty( $resolved_credentials['api_key'] ) || empty( $resolved_credentials['api_secret'] ) ) {
+            $resolved_credentials = function_exists( 'hp_ss_get_shipstation_credentials' )
+                ? hp_ss_get_shipstation_credentials()
+                : get_option( 'hp_core_shipstation_settings', array() );
+        }
+
+        $api_key = isset( $resolved_credentials['api_key'] ) ? $resolved_credentials['api_key'] : '';
+        $api_secret = isset( $resolved_credentials['api_secret'] ) ? $resolved_credentials['api_secret'] : '';
+        $debug_enabled = isset( $plugin_settings['debug_enabled'] ) && $plugin_settings['debug_enabled'] === 'yes';
 
         if ( empty( $api_key ) || empty( $api_secret ) ) {
             return new WP_Error( 'missing_credentials', __( 'ShipStation API credentials not configured.', 'hp-shipstation-rates' ) );

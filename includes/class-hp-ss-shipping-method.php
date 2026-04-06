@@ -157,11 +157,11 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             error_log( '[HP SS Method] Full package data: ' . print_r( $package, true ) );
         }
 
-        // Check if credentials are configured
-        $api_key = isset( $settings['api_key'] ) ? $settings['api_key'] : '';
-        $api_secret = isset( $settings['api_secret'] ) ? $settings['api_secret'] : '';
+        $credentials = function_exists( 'hp_ss_get_shipstation_credentials' )
+            ? hp_ss_get_shipstation_credentials()
+            : get_option( 'hp_core_shipstation_settings', array() );
 
-        if ( empty( $api_key ) || empty( $api_secret ) ) {
+        if ( empty( $credentials['api_key'] ) || empty( $credentials['api_secret'] ) ) {
             if ( $debug_enabled ) {
                 error_log( '[HP SS Method] API credentials not configured' );
             }
