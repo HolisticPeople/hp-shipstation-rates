@@ -3,7 +3,7 @@
  * Plugin Name: HP ShipStation Rates
  * Plugin URI: https://holisticpeople.com/
  * Description: Minimal WooCommerce shipping method that fetches real-time USPS and UPS quotes from ShipStation V1 API (with quick mode to prevent ghost orders).
- * Version: 2.5.2
+ * Version: 2.5.3
  * Author: Holistic People
  * Author URI: https://holisticpeople.com/
  * Text Domain: hp-shipstation-rates
@@ -22,7 +22,7 @@ if ( ! defined( 'WPINC' ) ) {
 }
 
 // Define plugin constants
-define( 'HP_SS_VERSION', '2.5.2' );
+define( 'HP_SS_VERSION', '2.5.3' );
 define( 'HP_SS_PLUGIN_FILE', __FILE__ );
 define( 'HP_SS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HP_SS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -105,23 +105,14 @@ add_filter( 'plugin_action_links_' . HP_SS_PLUGIN_BASENAME, 'hp_ss_plugin_action
  * @return array{api_key:string,api_secret:string,source:string}
  */
 function hp_ss_get_shipstation_credentials(): array {
-    if ( class_exists( '\HP_Core\Services\ShipStationSettings' ) ) {
-        $settings = \HP_Core\Services\ShipStationSettings::get_settings();
-        if ( ! empty( $settings['api_key'] ) && ! empty( $settings['api_secret'] ) ) {
-            return array(
-                'api_key' => (string) $settings['api_key'],
-                'api_secret' => (string) $settings['api_secret'],
-                'source' => 'hp_core',
-            );
-        }
-    }
-
-    $settings = get_option( 'hp_ss_settings', array() );
+    $settings = class_exists( '\HP_Core\Services\ShipStationSettings' )
+        ? \HP_Core\Services\ShipStationSettings::get_settings()
+        : get_option( 'hp_core_shipstation_settings', array() );
 
     return array(
         'api_key' => isset( $settings['api_key'] ) ? (string) $settings['api_key'] : '',
         'api_secret' => isset( $settings['api_secret'] ) ? (string) $settings['api_secret'] : '',
-        'source' => 'hp_shipstation_rates',
+        'source' => isset( $settings['source'] ) ? (string) $settings['source'] : 'hp_core',
     );
 }
 
@@ -137,11 +128,14 @@ function hp_ss_update_shipstation_credentials( string $api_key, string $api_secr
         return (bool) \HP_Core\Services\ShipStationSettings::update_credentials( $api_key, $api_secret, 'hp_shipstation_rates' );
     }
 
-    $settings = get_option( 'hp_ss_settings', array() );
-    $settings['api_key'] = sanitize_text_field( $api_key );
-    $settings['api_secret'] = sanitize_text_field( $api_secret );
-
-    return (bool) update_option( 'hp_ss_settings', $settings );
+    return (bool) update_option(
+        'hp_core_shipstation_settings',
+        array(
+            'api_key' => sanitize_text_field( $api_key ),
+            'api_secret' => sanitize_text_field( $api_secret ),
+            'source' => 'hp_shipstation_rates',
+        )
+    );
 }
 
 /**

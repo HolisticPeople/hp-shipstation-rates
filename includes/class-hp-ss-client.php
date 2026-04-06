@@ -32,22 +32,18 @@ class HP_SS_Client {
      * @return array|WP_Error Array of rates or WP_Error on failure
      */
     public static function get_rates( $from_address, $to_address, $package, $carrier_code, $credentials = null ) {
-        // Get API credentials
-        $settings = get_option( 'hp_ss_settings', array() );
+        $plugin_settings = get_option( 'hp_ss_settings', array() );
         $resolved_credentials = is_array( $credentials ) ? $credentials : array();
 
         if ( empty( $resolved_credentials['api_key'] ) || empty( $resolved_credentials['api_secret'] ) ) {
             $resolved_credentials = function_exists( 'hp_ss_get_shipstation_credentials' )
                 ? hp_ss_get_shipstation_credentials()
-                : array(
-                    'api_key' => isset( $settings['api_key'] ) ? $settings['api_key'] : '',
-                    'api_secret' => isset( $settings['api_secret'] ) ? $settings['api_secret'] : '',
-                );
+                : get_option( 'hp_core_shipstation_settings', array() );
         }
 
         $api_key = isset( $resolved_credentials['api_key'] ) ? $resolved_credentials['api_key'] : '';
         $api_secret = isset( $resolved_credentials['api_secret'] ) ? $resolved_credentials['api_secret'] : '';
-        $debug_enabled = isset( $settings['debug_enabled'] ) && $settings['debug_enabled'] === 'yes';
+        $debug_enabled = isset( $plugin_settings['debug_enabled'] ) && $plugin_settings['debug_enabled'] === 'yes';
 
         if ( empty( $api_key ) || empty( $api_secret ) ) {
             return new WP_Error( 'missing_credentials', __( 'ShipStation API credentials not configured.', 'hp-shipstation-rates' ) );

@@ -57,26 +57,30 @@ class HP_SS_Settings {
         // Get existing settings to preserve values not in current input
         $existing = get_option( 'hp_ss_settings', array() );
         $hp_core_available = class_exists( '\HP_Core\Services\ShipStationSettings' );
-        
-        // If input is already a complete settings array (from direct update_option calls),
-        // and it has all the existing keys, just return it as-is with minimal sanitization
-        if ( is_array( $input ) && isset( $input['api_key'] ) && isset( $input['service_config'] ) && 
-             count( $input ) >= 10 ) {
-            // This looks like a complete settings array being updated directly
-            // Just return it without modification (it's already from get_option so it's safe)
-            return $input;
-        }
-        
-        $sanitized = array();
 
-        // API credentials are owned by HP Core when available.
-        if ( $hp_core_available ) {
-            $sanitized['api_key'] = isset( $existing['api_key'] ) ? sanitize_text_field( (string) $existing['api_key'] ) : '';
-            $sanitized['api_secret'] = isset( $existing['api_secret'] ) ? sanitize_text_field( (string) $existing['api_secret'] ) : '';
-        } else {
-            $sanitized['api_key'] = isset( $input['api_key'] ) ? sanitize_text_field( $input['api_key'] ) : '';
-            $sanitized['api_secret'] = isset( $input['api_secret'] ) ? sanitize_text_field( $input['api_secret'] ) : '';
+        $api_key = isset( $input['shipstation_api_key'] )
+            ? sanitize_text_field( (string) $input['shipstation_api_key'] )
+            : ( isset( $input['api_key'] ) ? sanitize_text_field( (string) $input['api_key'] ) : '' );
+        $api_secret = isset( $input['shipstation_api_secret'] )
+            ? sanitize_text_field( (string) $input['shipstation_api_secret'] )
+            : ( isset( $input['api_secret'] ) ? sanitize_text_field( (string) $input['api_secret'] ) : '' );
+
+        if ( $api_key !== '' && $api_secret !== '' ) {
+            if ( $hp_core_available ) {
+                \HP_Core\Services\ShipStationSettings::update_credentials( $api_key, $api_secret, 'hp_shipstation_rates' );
+            } else {
+                update_option(
+                    'hp_core_shipstation_settings',
+                    array(
+                        'api_key' => $api_key,
+                        'api_secret' => $api_secret,
+                        'source' => 'hp_shipstation_rates',
+                    )
+                );
+            }
         }
+
+        $sanitized = array();
 
         // Service configurations (enabled services with custom display names)
         // Format: array( 'service_code' => array( 'enabled' => true, 'name' => 'Custom Name' ) )
@@ -148,11 +152,7 @@ class HP_SS_Settings {
         $settings = get_option( 'hp_ss_settings', array() );
         $credentials = function_exists( 'hp_ss_get_shipstation_credentials' )
             ? hp_ss_get_shipstation_credentials()
-            : array(
-                'api_key' => isset( $settings['api_key'] ) ? $settings['api_key'] : '',
-                'api_secret' => isset( $settings['api_secret'] ) ? $settings['api_secret'] : '',
-                'source' => 'hp_shipstation_rates',
-            );
+            : get_option( 'hp_core_shipstation_settings', array() );
         $api_key = isset( $credentials['api_key'] ) ? $credentials['api_key'] : '';
         $api_secret = isset( $credentials['api_secret'] ) ? $credentials['api_secret'] : '';
         $manage_in_core = class_exists( '\HP_Core\Services\ShipStationSettings' );
@@ -209,7 +209,7 @@ class HP_SS_Settings {
                             <label for="hp_ss_api_key"><?php esc_html_e( 'API Key', 'hp-shipstation-rates' ); ?></label>
                         </th>
                         <td>
-                            <input type="text" id="hp_ss_api_key" <?php echo $manage_in_core ? 'readonly="readonly"' : 'name="hp_ss_settings[api_key]"'; ?> value="<?php echo esc_attr( $api_key ); ?>" class="regular-text" />
+                            <input type="text" id="hp_ss_api_key" <?php echo $manage_in_core ? 'readonly="readonly"' : 'name="hp_ss_settings[shipstation_api_key]"'; ?> value="<?php echo esc_attr( $api_key ); ?>" class="regular-text" />
                             <p class="description">
                                 <?php echo esc_html( $manage_in_core ? 'Stored in HP Core and shared with HP plugins.' : 'Your ShipStation API Key' ); ?>
                             </p>
@@ -221,7 +221,7 @@ class HP_SS_Settings {
                             <label for="hp_ss_api_secret"><?php esc_html_e( 'API Secret', 'hp-shipstation-rates' ); ?></label>
                         </th>
                         <td>
-                            <input type="password" id="hp_ss_api_secret" <?php echo $manage_in_core ? 'readonly="readonly"' : 'name="hp_ss_settings[api_secret]"'; ?> value="<?php echo esc_attr( $api_secret ); ?>" class="regular-text" />
+                            <input type="password" id="hp_ss_api_secret" <?php echo $manage_in_core ? 'readonly="readonly"' : 'name="hp_ss_settings[shipstation_api_secret]"'; ?> value="<?php echo esc_attr( $api_secret ); ?>" class="regular-text" />
                             <p class="description">
                                 <?php echo esc_html( $manage_in_core ? 'Stored in HP Core and shared with HP plugins.' : 'Your ShipStation API Secret' ); ?>
                             </p>
