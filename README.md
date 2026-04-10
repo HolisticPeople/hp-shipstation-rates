@@ -1,6 +1,6 @@
 # HP ShipStation Rates - WooCommerce Shipping Plugin
 
-**Version:** 2.1.0  
+**Version:** 2.5.4  
 **Requires:** WordPress 5.8+, WooCommerce 5.0+  
 **License:** Proprietary  
 **Author:** Holistic People
