@@ -1,6 +1,6 @@
 # HP ShipStation Rates - WooCommerce Shipping Plugin
 
-**Version:** 2.5.4  
+**Version:** 2.5.5  
 **Requires:** WordPress 5.8+, WooCommerce 5.0+  
 **License:** Proprietary  
 **Author:** Holistic People
@@ -158,6 +158,11 @@ Enable "Debug Logging" in settings to see:
 - **Session Locks:** `hp_ss_session_{hash}` transients
 
 ## Changelog
+
+### 2.5.5 - 2026-04-18
+- Fixed checkout rate failures when `hp_ss_settings` service filters are empty or missing
+- Changed the Woo shipping method to fail open and accept returned ShipStation rates when no allow-list is configured
+- Kept explicit service filters and carrier disable flags intact when they are configured
 
 ### 2.1.0 - 2025-10-15
 - **Added:** Dynamic service discovery (domestic + international)

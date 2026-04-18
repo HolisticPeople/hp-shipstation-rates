@@ -204,19 +204,25 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
     
             // Get service configuration (new format with custom names)
             $service_config = isset( $settings['service_config'] ) && is_array( $settings['service_config'] ) ? $settings['service_config'] : array();
-            
+
             // Legacy support: get old format services
             $usps_services_legacy = isset( $settings['usps_services'] ) && is_array( $settings['usps_services'] ) ? $settings['usps_services'] : array();
             $ups_services_legacy = isset( $settings['ups_services'] ) && is_array( $settings['ups_services'] ) ? $settings['ups_services'] : array();
+            $has_service_filters = ! empty( $service_config ) || ! empty( $usps_services_legacy ) || ! empty( $ups_services_legacy );
             
             // Check if carriers are disabled for performance
             $disable_usps = isset( $settings['disable_usps'] ) && $settings['disable_usps'] === 'yes';
             $disable_ups = isset( $settings['disable_ups'] ) && $settings['disable_ups'] === 'yes';
     
             $all_rates = array();
-    
-            // Get USPS rates if any USPS services are enabled and not disabled
-            $has_usps_services = ! empty( $service_config ) || ! empty( $usps_services_legacy );
+
+            if ( ! $has_service_filters && $debug_enabled ) {
+                error_log( '[HP SS Method] No enabled service filters configured - querying active carriers and accepting returned rates' );
+            }
+
+            // If no service filters are configured, fail open and accept returned rates.
+            // This keeps checkout working when the allow-list option is empty or lost.
+            $has_usps_services = ! $has_service_filters || ! empty( $service_config ) || ! empty( $usps_services_legacy );
             if ( $has_usps_services && ! $disable_usps ) {
                 $usps_rates = HP_SS_Client::get_rates( $from_address, $to_address, $package_data, 'stamps_com' );
                 if ( ! is_wp_error( $usps_rates ) && is_array( $usps_rates ) ) {
@@ -225,9 +231,8 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
                     error_log( '[HP SS Method] USPS rates error: ' . $usps_rates->get_error_message() );
                 }
             }
-    
-            // Get UPS rates if any UPS services are enabled and not disabled
-            $has_ups_services = ! empty( $service_config ) || ! empty( $ups_services_legacy );
+
+            $has_ups_services = ! $has_service_filters || ! empty( $service_config ) || ! empty( $ups_services_legacy );
             if ( $has_ups_services && ! $disable_ups ) {
                 $ups_rates = HP_SS_Client::get_rates( $from_address, $to_address, $package_data, 'ups_walleted' );
                 if ( ! is_wp_error( $ups_rates ) && is_array( $ups_rates ) ) {
@@ -330,8 +335,8 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             $other_cost    = isset( $rate['otherCost'] ) ? floatval( $rate['otherCost'] ) : 0.0;
             $cost          = $shipment_cost + $other_cost;
 
-            // Check new format first (service_config)
-            $is_enabled = false;
+            // Fail open when no allow-list is configured, but keep honoring explicit filters.
+            $is_enabled = empty( $service_config ) && empty( $legacy_services );
             $custom_name = '';
             
             if ( isset( $service_config[ $service_code ] ) ) {
