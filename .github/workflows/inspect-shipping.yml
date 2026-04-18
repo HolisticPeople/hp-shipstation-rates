@@ -1,0 +1,161 @@
+name: Inspect HP ShipStation Rates Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to inspect
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set environment variables
+        id: vars
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+
+          if [ "$ENV" = "production" ]; then
+            echo "host=${{ secrets.KINSTAPROD_HOST }}" >> $GITHUB_OUTPUT
+            echo "port=${{ secrets.KINSTAPROD_PORT }}" >> $GITHUB_OUTPUT
+            echo "user=${{ secrets.KINSTAPROD_USER }}" >> $GITHUB_OUTPUT
+            echo "plugins_base=${{ secrets.KINSTAPROD_PLUGINS_BASE }}" >> $GITHUB_OUTPUT
+          else
+            echo "host=${{ secrets.KINSTA_HOST }}" >> $GITHUB_OUTPUT
+            echo "port=${{ secrets.KINSTA_PORT }}" >> $GITHUB_OUTPUT
+            echo "user=${{ secrets.KINSTA_USER }}" >> $GITHUB_OUTPUT
+            echo "plugins_base=${{ secrets.KINSTA_PLUGINS_BASE }}" >> $GITHUB_OUTPUT
+          fi
+
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          if [ "${{ steps.vars.outputs.environment }}" = "production" ]; then
+            echo "${{ secrets.KINSTAPROD_SSH_KEY }}" > ~/.ssh/kinsta_key
+          else
+            echo "${{ secrets.KINSTA_SSH_KEY }}" > ~/.ssh/kinsta_key
+          fi
+          chmod 600 ~/.ssh/kinsta_key
+          ssh-keyscan -p ${{ steps.vars.outputs.port }} ${{ steps.vars.outputs.host }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Inspect active plugin and settings
+        run: |
+          WP_ROOT="${{ steps.vars.outputs.plugins_base }}/../.."
+          ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
+            ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
+            "cd $WP_ROOT && \
+             echo '=== ACTIVE HP SHIPSTATION PLUGIN ===' && \
+             wp plugin list --status=active --fields=name,version --format=table | grep hp-shipstation-rates || true && \
+             echo '=== PLUGIN FOLDER MATCHES ===' && \
+             ls -d wp-content/plugins/hp-shipstation-rates* 2>/dev/null || true && \
+             echo '=== hp_ss_settings ===' && \
+             wp option get hp_ss_settings --format=json || true"
+
+      - name: Inspect live Woo shipping calculation
+        run: |
+          WP_ROOT="${{ steps.vars.outputs.plugins_base }}/../.."
+          ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
+            ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
+            "cd $WP_ROOT && wp eval '
+              if ( ! class_exists(\"WooCommerce\") ) {
+                  echo \"WooCommerce not loaded\n\";
+                  return;
+              }
+
+              \$product_id = 42191;
+              \$product = wc_get_product(\$product_id);
+              if ( ! \$product ) {
+                  echo \"Product not found\n\";
+                  return;
+              }
+
+              \$make_package = function(array \$destination) use (\$product) {
+                  return [
+                      \"contents\" => [
+                          [
+                              \"product_id\" => \$product->get_id(),
+                              \"variation_id\" => 0,
+                              \"quantity\" => 1,
+                              \"data\" => \$product,
+                              \"line_total\" => (float) \$product->get_price(),
+                          ],
+                      ],
+                      \"contents_cost\" => (float) \$product->get_price(),
+                      \"applied_coupons\" => [],
+                      \"user\" => [\"ID\" => 0],
+                      \"destination\" => \$destination,
+                  ];
+              };
+
+              \$tests = [
+                  \"us_nh\" => [
+                      \"country\" => \"US\",
+                      \"state\" => \"NH\",
+                      \"postcode\" => \"03055\",
+                      \"city\" => \"Milford\",
+                      \"address\" => \"60 Crosby St\",
+                      \"address_2\" => \"\",
+                  ],
+                  \"israel\" => [
+                      \"country\" => \"IL\",
+                      \"state\" => \"\",
+                      \"postcode\" => \"2015500\",
+                      \"city\" => \"Yaad\",
+                      \"address\" => \"Elat Hamastik 10\",
+                      \"address_2\" => \"\",
+                  ],
+              ];
+
+              foreach ( \$tests as \$label => \$destination ) {
+                  \$package = \$make_package(\$destination);
+                  \$zone = WC_Shipping_Zones::get_zone_matching_package(\$package);
+                  echo \"=== TEST: {\$label} ===\n\";
+                  echo wp_json_encode([
+                      \"zone_id\" => \$zone ? \$zone->get_id() : null,
+                      \"zone_name\" => \$zone ? \$zone->get_zone_name() : null,
+                  ], JSON_PRETTY_PRINT) . \"\n\";
+
+                  if ( ! \$zone ) {
+                      continue;
+                  }
+
+                  foreach ( \$zone->get_shipping_methods(true) as \$method ) {
+                      \$method->calculate_shipping(\$package);
+                      \$rates = [];
+                      foreach ( \$method->rates as \$rate_id => \$rate ) {
+                          \$rates[] = [
+                              \"method_id\" => \$method->id,
+                              \"instance_id\" => \$method->instance_id,
+                              \"enabled\" => \$method->enabled,
+                              \"rate_id\" => \$rate_id,
+                              \"label\" => \$rate->label,
+                              \"cost\" => \$rate->cost,
+                          ];
+                      }
+                      echo wp_json_encode([
+                          \"method_id\" => \$method->id,
+                          \"instance_id\" => \$method->instance_id,
+                          \"title\" => \$method->title,
+                          \"enabled\" => \$method->enabled,
+                          \"rate_count\" => count(\$rates),
+                          \"rates\" => \$rates,
+                      ], JSON_PRETTY_PRINT) . \"\n\";
+                  }
+              }
+            '"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/kinsta_key
