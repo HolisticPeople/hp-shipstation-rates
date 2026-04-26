@@ -109,10 +109,16 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         }
         $cart_hash = md5( wp_json_encode( $cart_items ) );
         
-        // Destination hash: ONLY zip code and country (street/city/state don't affect rates)
+        $destination = $this->validate_destination( isset( $package['destination'] ) && is_array( $package['destination'] ) ? $package['destination'] : array(), $package, $debug_enabled );
+        if ( is_wp_error( $destination ) ) {
+            return;
+        }
+
+        // Destination hash: validated country/postcode/state only; street/city don't affect rates.
         $dest_key = array(
-            'zip' => isset( $package['destination']['postcode'] ) ? $package['destination']['postcode'] : '',
-            'country' => isset( $package['destination']['country'] ) ? $package['destination']['country'] : ''
+            'zip'     => isset( $destination['postcode'] ) ? $destination['postcode'] : '',
+            'country' => isset( $destination['country'] ) ? $destination['country'] : '',
+            'state'   => isset( $destination['state'] ) ? $destination['state'] : '',
         );
         $dest_hash = md5( wp_json_encode( $dest_key ) );
         
@@ -177,7 +183,7 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
     
             // Build addresses and package data
             $from_address = HP_SS_Packager::get_from_address();
-            $to_address = HP_SS_Packager::get_to_address( $package['destination'] );
+            $to_address = HP_SS_Packager::get_to_address( $destination );
             $package_data = HP_SS_Packager::build_package( $package['contents'] );
     
             // Normalize Puerto Rico: ShipStation expects country=US and state=PR
@@ -261,10 +267,19 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
                 if ( $debug_enabled ) {
                     error_log( '[HP SS Method] Added ' . count( $all_rates ) . ' rates to checkout (sorted by price, cached for reuse)' );
                 }
+                $this->emit_monitor_event( 'shipping.quote.succeeded', $this->monitor_context( $destination, $package, array(
+                    'source_backend' => 'hp_shipstation_rates',
+                    'severity'       => 'info',
+                    'rate_count'     => count( $all_rates ),
+                ) ) );
             } else {
                 if ( $debug_enabled ) {
                     error_log( '[HP SS Method] No rates returned from ShipStation' );
                 }
+                $this->emit_monitor_event( 'shipstation.quote.empty', $this->monitor_context( $destination, $package, array(
+                    'source_backend' => 'hp_shipstation_rates',
+                    'reason'         => 'all_carriers_empty',
+                ) ) );
             }
 
             if ( $debug_enabled ) {
@@ -275,6 +290,105 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         } finally {
             delete_transient( $session_key );
         }
+    }
+
+    /**
+     * Validate and normalize the Woo package destination without weakening HP Core rules.
+     *
+     * @param array $destination WooCommerce package destination.
+     * @param array $package     WooCommerce package data.
+     * @param bool  $debug_enabled Whether debug logging is enabled.
+     * @return array|\WP_Error
+     */
+    private function validate_destination( $destination, $package, $debug_enabled ) {
+        $normalized = array(
+            'postcode'  => isset( $destination['postcode'] ) ? sanitize_text_field( (string) $destination['postcode'] ) : '',
+            'city'      => isset( $destination['city'] ) ? sanitize_text_field( (string) $destination['city'] ) : '',
+            'state'     => isset( $destination['state'] ) ? sanitize_text_field( (string) $destination['state'] ) : '',
+            'country'   => isset( $destination['country'] ) ? sanitize_text_field( (string) $destination['country'] ) : '',
+            'address_1' => isset( $destination['address'] ) ? sanitize_text_field( (string) $destination['address'] ) : '',
+            'address_2' => isset( $destination['address_2'] ) ? sanitize_text_field( (string) $destination['address_2'] ) : '',
+        );
+
+        if ( class_exists( '\HP_Core\Services\ShippingDestinationValidator' ) ) {
+            $validator = new \HP_Core\Services\ShippingDestinationValidator();
+            $validation = $validator->validate( $normalized );
+            $normalized_address = isset( $validation['address'] ) && is_array( $validation['address'] ) ? $validation['address'] : $normalized;
+
+            if ( empty( $validation['valid'] ) ) {
+                $errors = isset( $validation['errors'] ) && is_array( $validation['errors'] ) ? $validation['errors'] : array();
+                if ( $debug_enabled ) {
+                    error_log( '[HP SS Method] Invalid destination: ' . wp_json_encode( array_keys( $errors ) ) );
+                }
+                $this->emit_monitor_event( 'shipping.quote.invalid_destination', $this->monitor_context( $normalized_address, $package, array(
+                    'source_backend' => 'hp_shipstation_rates',
+                    'reason'         => 'invalid_destination',
+                    'invalid_fields' => implode( ',', array_keys( $errors ) ),
+                ) ) );
+                return new \WP_Error( 'invalid_shipping_destination', 'Shipping destination is incomplete or invalid.' );
+            }
+
+            $normalized = $normalized_address;
+        } elseif ( empty( $normalized['postcode'] ) || empty( $normalized['country'] ) ) {
+            if ( $debug_enabled ) {
+                error_log( '[HP SS Method] Missing destination postal code or country' );
+            }
+            $this->emit_monitor_event( 'shipping.quote.invalid_destination', $this->monitor_context( $normalized, $package, array(
+                'source_backend' => 'hp_shipstation_rates',
+                'reason'         => 'missing_destination_postcode_or_country',
+                'invalid_fields' => empty( $normalized['country'] ) ? 'country' : 'postcode',
+            ) ) );
+            return new \WP_Error( 'invalid_shipping_destination', 'Shipping destination is incomplete.' );
+        }
+
+        if ( isset( $destination['address'] ) && ! isset( $normalized['address'] ) ) {
+            $normalized['address'] = $normalized['address_1'] ?? '';
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Build a non-PII monitor context for Inspector.
+     *
+     * @param array $destination Normalized destination.
+     * @param array $package     WooCommerce package.
+     * @param array $extra       Additional event context.
+     * @return array
+     */
+    private function monitor_context( $destination, $package, $extra = array() ) {
+        return array_merge( array(
+            'source_plugin'    => 'hp-shipstation-rates',
+            'domain'           => 'ops',
+            'entity_type'      => 'shipping_quote',
+            'entity_id'        => substr( md5( wp_json_encode( array(
+                'country' => $destination['country'] ?? '',
+                'state'   => $destination['state'] ?? '',
+                'postcode_present' => trim( (string) ( $destination['postcode'] ?? '' ) ) !== '',
+                'contents' => array_keys( isset( $package['contents'] ) && is_array( $package['contents'] ) ? $package['contents'] : array() ),
+            ) ) ), 0, 32 ),
+            'origin_type'      => is_admin() ? 'admin' : 'customer',
+            'trust_class'      => is_user_logged_in() ? 'trusted_human' : 'likely_human',
+            'severity'         => 'warning',
+            'source_surface'   => 'classic_woocommerce_checkout',
+            'checkout_path'    => 'classic_woocommerce',
+            'country'          => sanitize_text_field( (string) ( $destination['country'] ?? '' ) ),
+            'state'            => sanitize_text_field( (string) ( $destination['state'] ?? '' ) ),
+            'postcode_present' => trim( (string) ( $destination['postcode'] ?? '' ) ) !== '',
+            'city_present'     => trim( (string) ( $destination['city'] ?? '' ) ) !== '',
+            'address_present'  => trim( (string) ( $destination['address_1'] ?? $destination['address'] ?? '' ) ) !== '',
+            'items_count'      => isset( $package['contents'] ) && is_array( $package['contents'] ) ? count( $package['contents'] ) : 0,
+        ), $extra );
+    }
+
+    /**
+     * Emit an Inspector monitor event when the Inspector plugin is active.
+     *
+     * @param string $event_name Event name.
+     * @param array  $context    Event context.
+     */
+    private function emit_monitor_event( $event_name, $context ) {
+        do_action( 'hp_monitor_event', $event_name, $context );
     }
 
     /**
