@@ -206,3 +206,6 @@ Proprietary - © 2025 Holistic People. All rights reserved.
 **Holistic People**  
 Website: https://holisticpeople.com/
 
+## Runtime Requirements
+
+- PHP 8.5+
