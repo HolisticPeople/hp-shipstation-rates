@@ -1,6 +1,6 @@
 # HP ShipStation Rates - WooCommerce Shipping Plugin
 
-**Version:** 2.5.5  
+**Version:** 4.0.0  
 **Requires:** WordPress 5.8+, WooCommerce 5.0+  
 **License:** Proprietary  
 **Author:** Holistic People
@@ -8,6 +8,12 @@
 ## Description
 
 Minimal, high-performance WooCommerce shipping method that fetches real-time USPS and UPS shipping quotes from ShipStation V1 API. Features dynamic service discovery, intelligent ZIP-only caching, and professional admin UI for complete control over shipping options.
+
+## Release Notes
+
+### 4.0.0
+
+- Major production promotion for the PHP 8.5 baseline, staged ShipStation checkout resilience fixes, and HP-owned checkout compatibility.
 
 ## Key Features
 
