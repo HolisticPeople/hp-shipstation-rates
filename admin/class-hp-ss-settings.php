@@ -759,9 +759,11 @@ class HP_SS_Settings {
      * Enqueue admin scripts
      */
     public static function enqueue_admin_scripts( $hook ) {
-        // JavaScript is now inline in the settings page, no external file needed
-        // Keeping this function for potential future use
-        return;
+        if ( $hook !== 'woocommerce_page_hp-ss-settings' ) {
+            return;
+        }
+
+        do_action( 'hp_zen_enqueue_admin_surface', 'hp-shipstation-rates' );
     }
     
     /**

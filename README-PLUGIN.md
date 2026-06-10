@@ -138,6 +138,11 @@ admin/
 
 ## Version History
 
+### 2.5.5
+- Fixed a production checkout failure mode where an empty service filter configuration suppressed all ShipStation rates
+- Changed the Woo shipping method to accept returned rates when no allow-list is configured
+- Preserved explicit allow-list filtering when services are configured
+
 ### 1.0.0 - Initial Release
 - ShipStation V1 API integration with quick mode
 - USPS and UPS rate fetching

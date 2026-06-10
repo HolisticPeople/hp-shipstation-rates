@@ -109,10 +109,16 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         }
         $cart_hash = md5( wp_json_encode( $cart_items ) );
         
-        // Destination hash: ONLY zip code and country (street/city/state don't affect rates)
+        $destination = $this->validate_destination( isset( $package['destination'] ) && is_array( $package['destination'] ) ? $package['destination'] : array(), $package, $debug_enabled );
+        if ( is_wp_error( $destination ) ) {
+            return;
+        }
+
+        // Destination hash: validated country/postcode/state only; street/city don't affect rates.
         $dest_key = array(
-            'zip' => isset( $package['destination']['postcode'] ) ? $package['destination']['postcode'] : '',
-            'country' => isset( $package['destination']['country'] ) ? $package['destination']['country'] : ''
+            'zip'     => isset( $destination['postcode'] ) ? $destination['postcode'] : '',
+            'country' => isset( $destination['country'] ) ? $destination['country'] : '',
+            'state'   => isset( $destination['state'] ) ? $destination['state'] : '',
         );
         $dest_hash = md5( wp_json_encode( $dest_key ) );
         
@@ -131,9 +137,6 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             foreach ( $cached_rates as $rate ) {
                 $this->add_rate( $rate );
             }
-            
-            // Update session timestamp to prevent recalculation
-            set_transient( $session_key, time(), 120 );
             return;
         }
         
@@ -142,124 +145,280 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         if ( $calc_lock !== false ) {
             $seconds_ago = time() - $calc_lock;
             if ( $seconds_ago < 10 ) {
-                error_log( '[HP SS Method] CALCULATION IN PROGRESS - skipping (started ' . $seconds_ago . ' seconds ago)' );
-                return;
+                $waited_rates = $this->wait_for_cached_rates( $rates_cache_key, $debug_enabled, $dest_key );
+
+                if ( is_array( $waited_rates ) && ! empty( $waited_rates ) ) {
+                    foreach ( $waited_rates as $rate ) {
+                        $this->add_rate( $rate );
+                    }
+                    return;
+                }
+
+                if ( $debug_enabled ) {
+                    error_log( '[HP SS Method] CALCULATION IN PROGRESS - cache not ready after wait, recalculating in current request' );
+                }
             }
         }
         
         set_transient( $session_key, time(), 120 );
 
         $start_time = microtime( true );
-        
-        if ( $debug_enabled ) {
-            error_log( '[HP SS Method] ===== CALCULATE_SHIPPING START =====' );
-            error_log( '[HP SS Method] Package items: ' . count( $package['contents'] ) );
-            error_log( '[HP SS Method] Full package data: ' . print_r( $package, true ) );
-        }
-
-        $credentials = function_exists( 'hp_ss_get_shipstation_credentials' )
-            ? hp_ss_get_shipstation_credentials()
-            : get_option( 'hp_core_shipstation_settings', array() );
-
-        if ( empty( $credentials['api_key'] ) || empty( $credentials['api_secret'] ) ) {
+        try {
             if ( $debug_enabled ) {
-                error_log( '[HP SS Method] API credentials not configured' );
+                error_log( '[HP SS Method] ===== CALCULATE_SHIPPING START =====' );
+                error_log( '[HP SS Method] Package items: ' . count( $package['contents'] ) );
+                error_log( '[HP SS Method] Full package data: ' . print_r( $package, true ) );
             }
-            return;
-        }
-
-        // Build addresses and package data
-        $from_address = HP_SS_Packager::get_from_address();
-        $to_address = HP_SS_Packager::get_to_address( $package['destination'] );
-        $package_data = HP_SS_Packager::build_package( $package['contents'] );
-
-        // Normalize Puerto Rico: ShipStation expects country=US and state=PR
-        if ( strtoupper( $to_address['country'] ) === 'PR' ) {
+    
+            $credentials = function_exists( 'hp_ss_get_shipstation_credentials' )
+                ? hp_ss_get_shipstation_credentials()
+                : get_option( 'hp_core_shipstation_settings', array() );
+    
+            if ( empty( $credentials['api_key'] ) || empty( $credentials['api_secret'] ) ) {
+                if ( $debug_enabled ) {
+                    error_log( '[HP SS Method] API credentials not configured' );
+                }
+                return;
+            }
+    
+            // Build addresses and package data
+            $from_address = HP_SS_Packager::get_from_address();
+            $to_address = HP_SS_Packager::get_to_address( $destination );
+            $package_data = HP_SS_Packager::build_package( $package['contents'] );
+    
+            // Normalize Puerto Rico: ShipStation expects country=US and state=PR
+            if ( strtoupper( $to_address['country'] ) === 'PR' ) {
+                if ( $debug_enabled ) {
+                    error_log( '[HP SS Method] Normalizing Puerto Rico address for ShipStation API from ' . $to_address['country'] . '/' . $to_address['state'] . ' to US/PR' );
+                }
+                $to_address['country'] = 'US';
+                $to_address['state']   = 'PR';
+            }
+    
             if ( $debug_enabled ) {
-                error_log( '[HP SS Method] Normalizing Puerto Rico address for ShipStation API from ' . $to_address['country'] . '/' . $to_address['state'] . ' to US/PR' );
+                error_log( '[HP SS Method] Package data: ' . wp_json_encode( $package_data ) );
+                error_log( '[HP SS Method] To address: ' . wp_json_encode( $to_address ) );
             }
-            $to_address['country'] = 'US';
-            $to_address['state']   = 'PR';
-        }
+    
+            // Validate essential data
+            if ( empty( $to_address['postcode'] ) || empty( $to_address['country'] ) ) {
+                if ( $debug_enabled ) {
+                    error_log( '[HP SS Method] Missing destination postal code or country' );
+                }
+                return;
+            }
+    
+            // Get service configuration (new format with custom names)
+            $service_config = isset( $settings['service_config'] ) && is_array( $settings['service_config'] ) ? $settings['service_config'] : array();
 
-        if ( $debug_enabled ) {
-            error_log( '[HP SS Method] Package data: ' . wp_json_encode( $package_data ) );
-            error_log( '[HP SS Method] To address: ' . wp_json_encode( $to_address ) );
-        }
+            // Legacy support: get old format services
+            $usps_services_legacy = isset( $settings['usps_services'] ) && is_array( $settings['usps_services'] ) ? $settings['usps_services'] : array();
+            $ups_services_legacy = isset( $settings['ups_services'] ) && is_array( $settings['ups_services'] ) ? $settings['ups_services'] : array();
+            $has_service_filters = ! empty( $service_config ) || ! empty( $usps_services_legacy ) || ! empty( $ups_services_legacy );
+            
+            // Check if carriers are disabled for performance
+            $disable_usps = isset( $settings['disable_usps'] ) && $settings['disable_usps'] === 'yes';
+            $disable_ups = isset( $settings['disable_ups'] ) && $settings['disable_ups'] === 'yes';
+    
+            $all_rates = array();
 
-        // Validate essential data
-        if ( empty( $to_address['postcode'] ) || empty( $to_address['country'] ) ) {
+            if ( ! $has_service_filters && $debug_enabled ) {
+                error_log( '[HP SS Method] No enabled service filters configured - querying active carriers and accepting returned rates' );
+            }
+
+            // If no service filters are configured, fail open and accept returned rates.
+            // This keeps checkout working when the allow-list option is empty or lost.
+            $has_usps_services = ! $has_service_filters || ! empty( $service_config ) || ! empty( $usps_services_legacy );
+            if ( $has_usps_services && ! $disable_usps ) {
+                $usps_rates = HP_SS_Client::get_rates( $from_address, $to_address, $package_data, 'stamps_com' );
+                if ( ! is_wp_error( $usps_rates ) && is_array( $usps_rates ) ) {
+                    $all_rates = array_merge( $all_rates, $this->filter_rates( $usps_rates, $service_config, 'USPS', $usps_services_legacy ) );
+                } elseif ( is_wp_error( $usps_rates ) && $debug_enabled ) {
+                    error_log( '[HP SS Method] USPS rates error: ' . $usps_rates->get_error_message() );
+                }
+            }
+
+            $has_ups_services = ! $has_service_filters || ! empty( $service_config ) || ! empty( $ups_services_legacy );
+            if ( $has_ups_services && ! $disable_ups ) {
+                $ups_rates = HP_SS_Client::get_rates( $from_address, $to_address, $package_data, 'ups_walleted' );
+                if ( ! is_wp_error( $ups_rates ) && is_array( $ups_rates ) ) {
+                    $all_rates = array_merge( $all_rates, $this->filter_rates( $ups_rates, $service_config, 'UPS', $ups_services_legacy ) );
+                } elseif ( is_wp_error( $ups_rates ) && $debug_enabled ) {
+                    error_log( '[HP SS Method] UPS rates error: ' . $ups_rates->get_error_message() );
+                }
+            }
+    
+            // Sort rates by price (lowest first) before adding to WooCommerce
+            if ( ! empty( $all_rates ) ) {
+                usort( $all_rates, function( $a, $b ) {
+                    return $a['cost'] <=> $b['cost'];
+                } );
+                
+                // Store rates in cache for reuse (2 minutes)
+                set_transient( $rates_cache_key, $all_rates, 120 );
+                
+                foreach ( $all_rates as $rate ) {
+                    if ( $debug_enabled ) {
+                        error_log( '[HP SS Method] Adding rate: ' . print_r( $rate, true ) );
+                    }
+                    $this->add_rate( $rate );
+                }
+                
+                if ( $debug_enabled ) {
+                    error_log( '[HP SS Method] Added ' . count( $all_rates ) . ' rates to checkout (sorted by price, cached for reuse)' );
+                }
+                $this->emit_monitor_event( 'shipping.quote.succeeded', $this->monitor_context( $destination, $package, array(
+                    'source_backend' => 'hp_shipstation_rates',
+                    'severity'       => 'info',
+                    'rate_count'     => count( $all_rates ),
+                ) ) );
+            } else {
+                if ( $debug_enabled ) {
+                    error_log( '[HP SS Method] No rates returned from ShipStation' );
+                }
+                $this->emit_monitor_event( 'shipstation.quote.empty', $this->monitor_context( $destination, $package, array(
+                    'source_backend' => 'hp_shipstation_rates',
+                    'reason'         => 'all_carriers_empty',
+                ) ) );
+            }
+
+            if ( $debug_enabled ) {
+                $end_time = microtime( true );
+                $duration = round( ( $end_time - $start_time ) * 1000, 2 );
+                error_log( '[HP SS Method] ===== CALCULATE_SHIPPING END (took ' . $duration . 'ms) =====' );
+            }
+        } finally {
+            delete_transient( $session_key );
+        }
+    }
+
+    /**
+     * Validate and normalize the Woo package destination without weakening HP Core rules.
+     *
+     * @param array $destination WooCommerce package destination.
+     * @param array $package     WooCommerce package data.
+     * @param bool  $debug_enabled Whether debug logging is enabled.
+     * @return array|\WP_Error
+     */
+    private function validate_destination( $destination, $package, $debug_enabled ) {
+        $normalized = array(
+            'postcode'  => isset( $destination['postcode'] ) ? sanitize_text_field( (string) $destination['postcode'] ) : '',
+            'city'      => isset( $destination['city'] ) ? sanitize_text_field( (string) $destination['city'] ) : '',
+            'state'     => isset( $destination['state'] ) ? sanitize_text_field( (string) $destination['state'] ) : '',
+            'country'   => isset( $destination['country'] ) ? sanitize_text_field( (string) $destination['country'] ) : '',
+            'address_1' => isset( $destination['address'] ) ? sanitize_text_field( (string) $destination['address'] ) : '',
+            'address_2' => isset( $destination['address_2'] ) ? sanitize_text_field( (string) $destination['address_2'] ) : '',
+        );
+
+        if ( class_exists( '\HP_Core\Services\ShippingDestinationValidator' ) ) {
+            $validator = new \HP_Core\Services\ShippingDestinationValidator();
+            $validation = $validator->validate( $normalized );
+            $normalized_address = isset( $validation['address'] ) && is_array( $validation['address'] ) ? $validation['address'] : $normalized;
+
+            if ( empty( $validation['valid'] ) ) {
+                $errors = isset( $validation['errors'] ) && is_array( $validation['errors'] ) ? $validation['errors'] : array();
+                if ( $debug_enabled ) {
+                    error_log( '[HP SS Method] Invalid destination: ' . wp_json_encode( array_keys( $errors ) ) );
+                }
+                $this->emit_monitor_event( 'shipping.quote.invalid_destination', $this->monitor_context( $normalized_address, $package, array(
+                    'source_backend' => 'hp_shipstation_rates',
+                    'reason'         => 'invalid_destination',
+                    'invalid_fields' => implode( ',', array_keys( $errors ) ),
+                ) ) );
+                return new \WP_Error( 'invalid_shipping_destination', 'Shipping destination is incomplete or invalid.' );
+            }
+
+            $normalized = $normalized_address;
+        } elseif ( empty( $normalized['postcode'] ) || empty( $normalized['country'] ) ) {
             if ( $debug_enabled ) {
                 error_log( '[HP SS Method] Missing destination postal code or country' );
             }
-            return;
+            $this->emit_monitor_event( 'shipping.quote.invalid_destination', $this->monitor_context( $normalized, $package, array(
+                'source_backend' => 'hp_shipstation_rates',
+                'reason'         => 'missing_destination_postcode_or_country',
+                'invalid_fields' => empty( $normalized['country'] ) ? 'country' : 'postcode',
+            ) ) );
+            return new \WP_Error( 'invalid_shipping_destination', 'Shipping destination is incomplete.' );
         }
 
-        // Get service configuration (new format with custom names)
-        $service_config = isset( $settings['service_config'] ) && is_array( $settings['service_config'] ) ? $settings['service_config'] : array();
-        
-        // Legacy support: get old format services
-        $usps_services_legacy = isset( $settings['usps_services'] ) && is_array( $settings['usps_services'] ) ? $settings['usps_services'] : array();
-        $ups_services_legacy = isset( $settings['ups_services'] ) && is_array( $settings['ups_services'] ) ? $settings['ups_services'] : array();
-        
-        // Check if carriers are disabled for performance
-        $disable_usps = isset( $settings['disable_usps'] ) && $settings['disable_usps'] === 'yes';
-        $disable_ups = isset( $settings['disable_ups'] ) && $settings['disable_ups'] === 'yes';
-
-        $all_rates = array();
-
-        // Get USPS rates if any USPS services are enabled and not disabled
-        $has_usps_services = ! empty( $service_config ) || ! empty( $usps_services_legacy );
-        if ( $has_usps_services && ! $disable_usps ) {
-            $usps_rates = HP_SS_Client::get_rates( $from_address, $to_address, $package_data, 'stamps_com' );
-            if ( ! is_wp_error( $usps_rates ) && is_array( $usps_rates ) ) {
-                $all_rates = array_merge( $all_rates, $this->filter_rates( $usps_rates, $service_config, 'USPS', $usps_services_legacy ) );
-            } elseif ( is_wp_error( $usps_rates ) && $debug_enabled ) {
-                error_log( '[HP SS Method] USPS rates error: ' . $usps_rates->get_error_message() );
-            }
+        if ( isset( $destination['address'] ) && ! isset( $normalized['address'] ) ) {
+            $normalized['address'] = $normalized['address_1'] ?? '';
         }
 
-        // Get UPS rates if any UPS services are enabled and not disabled
-        $has_ups_services = ! empty( $service_config ) || ! empty( $ups_services_legacy );
-        if ( $has_ups_services && ! $disable_ups ) {
-            $ups_rates = HP_SS_Client::get_rates( $from_address, $to_address, $package_data, 'ups_walleted' );
-            if ( ! is_wp_error( $ups_rates ) && is_array( $ups_rates ) ) {
-                $all_rates = array_merge( $all_rates, $this->filter_rates( $ups_rates, $service_config, 'UPS', $ups_services_legacy ) );
-            } elseif ( is_wp_error( $ups_rates ) && $debug_enabled ) {
-                error_log( '[HP SS Method] UPS rates error: ' . $ups_rates->get_error_message() );
-            }
-        }
+        return $normalized;
+    }
 
-        // Sort rates by price (lowest first) before adding to WooCommerce
-        if ( ! empty( $all_rates ) ) {
-            usort( $all_rates, function( $a, $b ) {
-                return $a['cost'] <=> $b['cost'];
-            } );
-            
-            // Store rates in cache for reuse (2 minutes)
-            set_transient( $rates_cache_key, $all_rates, 120 );
-            
-            foreach ( $all_rates as $rate ) {
+    /**
+     * Build a non-PII monitor context for Inspector.
+     *
+     * @param array $destination Normalized destination.
+     * @param array $package     WooCommerce package.
+     * @param array $extra       Additional event context.
+     * @return array
+     */
+    private function monitor_context( $destination, $package, $extra = array() ) {
+        return array_merge( array(
+            'source_plugin'    => 'hp-shipstation-rates',
+            'domain'           => 'ops',
+            'entity_type'      => 'shipping_quote',
+            'entity_id'        => substr( md5( wp_json_encode( array(
+                'country' => $destination['country'] ?? '',
+                'state'   => $destination['state'] ?? '',
+                'postcode_present' => trim( (string) ( $destination['postcode'] ?? '' ) ) !== '',
+                'contents' => array_keys( isset( $package['contents'] ) && is_array( $package['contents'] ) ? $package['contents'] : array() ),
+            ) ) ), 0, 32 ),
+            'origin_type'      => is_admin() ? 'admin' : 'customer',
+            'trust_class'      => is_user_logged_in() ? 'trusted_human' : 'likely_human',
+            'severity'         => 'warning',
+            'source_surface'   => 'classic_woocommerce_checkout',
+            'checkout_path'    => 'classic_woocommerce',
+            'country'          => sanitize_text_field( (string) ( $destination['country'] ?? '' ) ),
+            'state'            => sanitize_text_field( (string) ( $destination['state'] ?? '' ) ),
+            'postcode_present' => trim( (string) ( $destination['postcode'] ?? '' ) ) !== '',
+            'city_present'     => trim( (string) ( $destination['city'] ?? '' ) ) !== '',
+            'address_present'  => trim( (string) ( $destination['address_1'] ?? $destination['address'] ?? '' ) ) !== '',
+            'items_count'      => isset( $package['contents'] ) && is_array( $package['contents'] ) ? count( $package['contents'] ) : 0,
+        ), $extra );
+    }
+
+    /**
+     * Emit an Inspector monitor event when the Inspector plugin is active.
+     *
+     * @param string $event_name Event name.
+     * @param array  $context    Event context.
+     */
+    private function emit_monitor_event( $event_name, $context ) {
+        do_action( 'hp_monitor_event', $event_name, $context );
+    }
+
+    /**
+     * Wait briefly for another request to finish calculating and populate the cache.
+     *
+     * @param string $rates_cache_key Cache key for stored rates.
+     * @param bool   $debug_enabled   Whether debug logging is enabled.
+     * @param array  $dest_key        Destination key used in cache logging.
+     * @return array|null
+     */
+    private function wait_for_cached_rates( $rates_cache_key, $debug_enabled, $dest_key ) {
+        $attempts = 20;
+
+        for ( $i = 0; $i < $attempts; $i++ ) {
+            usleep( 250000 );
+
+            $cached_rates = get_transient( $rates_cache_key );
+            if ( $cached_rates !== false && is_array( $cached_rates ) ) {
                 if ( $debug_enabled ) {
-                    error_log( '[HP SS Method] Adding rate: ' . print_r( $rate, true ) );
+                    error_log( '[HP SS Method] Using cached rates after wait - found ' . count( $cached_rates ) . ' rates (ZIP: ' . $dest_key['zip'] . ')' );
                 }
-                $this->add_rate( $rate );
-            }
-            
-            if ( $debug_enabled ) {
-                error_log( '[HP SS Method] Added ' . count( $all_rates ) . ' rates to checkout (sorted by price, cached for reuse)' );
-            }
-        } else {
-            if ( $debug_enabled ) {
-                error_log( '[HP SS Method] No rates returned from ShipStation' );
+                return $cached_rates;
             }
         }
 
         if ( $debug_enabled ) {
-            $end_time = microtime( true );
-            $duration = round( ( $end_time - $start_time ) * 1000, 2 );
-            error_log( '[HP SS Method] ===== CALCULATE_SHIPPING END (took ' . $duration . 'ms) =====' );
+            error_log( '[HP SS Method] CALCULATION IN PROGRESS - cache still empty after wait window' );
         }
+
+        return null;
     }
 
     /**
@@ -290,8 +449,8 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             $other_cost    = isset( $rate['otherCost'] ) ? floatval( $rate['otherCost'] ) : 0.0;
             $cost          = $shipment_cost + $other_cost;
 
-            // Check new format first (service_config)
-            $is_enabled = false;
+            // Fail open when no allow-list is configured, but keep honoring explicit filters.
+            $is_enabled = empty( $service_config ) && empty( $legacy_services );
             $custom_name = '';
             
             if ( isset( $service_config[ $service_code ] ) ) {
