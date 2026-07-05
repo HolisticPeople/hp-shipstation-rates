@@ -175,8 +175,8 @@ class HP_SS_Settings {
         ) );
 
         ?>
-        <div class="wrap">
-            <h1><?php esc_html_e( 'HP ShipStation Rates Settings', 'hp-shipstation-rates' ); ?> <small style="color: #666; font-weight: normal;">v<?php echo esc_html( HP_SS_VERSION ); ?></small></h1>
+        <div class="wrap hp-zen-admin-surface hp-ss-settings-page">
+            <h1><?php esc_html_e( 'HP ShipStation Rates Settings', 'hp-shipstation-rates' ); ?> <small class="hp-ss-version">v<?php echo esc_html( HP_SS_VERSION ); ?></small></h1>
             
             <form method="post" action="options.php" enctype="multipart/form-data">
                 <?php settings_fields( 'hp_ss_settings_group' ); ?>
@@ -269,8 +269,8 @@ class HP_SS_Settings {
                                     </p>
                                     
                                     <?php if ( ! empty( $discovered_services['usps'] ) ) : ?>
-                                        <h4>USPS Services:</h4>
-                                        <table class="widefat" style="margin-bottom: 20px;">
+                                        <h4 class="hp-ss-service-title">USPS Services:</h4>
+                                        <table class="widefat hp-ss-service-table">
                                             <thead>
                                                 <tr>
                                                     <th style="width: 50px;">Enable</th>
@@ -284,7 +284,7 @@ class HP_SS_Settings {
                                                     $is_enabled = isset( $service_config[ $code ]['enabled'] ) && $service_config[ $code ]['enabled'];
                                                     $custom_name = isset( $service_config[ $code ]['name'] ) && ! empty( $service_config[ $code ]['name'] ) ? $service_config[ $code ]['name'] : $name;
                                                 ?>
-                                                    <tr>
+                                                    <tr class="hp-ss-service-row <?php echo $is_enabled ? 'is-enabled' : ''; ?>">
                                                         <td style="text-align: center;">
                                                             <input type="checkbox" 
                                                                    name="hp_ss_settings[service_config][<?php echo esc_attr( $code ); ?>][enabled]" 
@@ -306,8 +306,8 @@ class HP_SS_Settings {
                                     <?php endif; ?>
                                     
                                     <?php if ( ! empty( $discovered_services['ups'] ) ) : ?>
-                                        <h4>UPS Services:</h4>
-                                        <table class="widefat" style="margin-bottom: 20px;">
+                                        <h4 class="hp-ss-service-title">UPS Services:</h4>
+                                        <table class="widefat hp-ss-service-table">
                                             <thead>
                                                 <tr>
                                                     <th style="width: 50px;">Enable</th>
@@ -321,7 +321,7 @@ class HP_SS_Settings {
                                                     $is_enabled = isset( $service_config[ $code ]['enabled'] ) && $service_config[ $code ]['enabled'];
                                                     $custom_name = isset( $service_config[ $code ]['name'] ) && ! empty( $service_config[ $code ]['name'] ) ? $service_config[ $code ]['name'] : $name;
                                                 ?>
-                                                    <tr>
+                                                    <tr class="hp-ss-service-row <?php echo $is_enabled ? 'is-enabled' : ''; ?>">
                                                         <td style="text-align: center;">
                                                             <input type="checkbox" 
                                                                    name="hp_ss_settings[service_config][<?php echo esc_attr( $code ); ?>][enabled]" 
@@ -532,7 +532,7 @@ class HP_SS_Settings {
                 }
                 
                 $button.prop('disabled', true).text('Fetching services...');
-                $result.html('<span style="color: #666;">⏳ Querying ShipStation for available services (this may take 10-15 seconds)...</span>');
+                $result.html('<span class="hp-ss-status hp-ss-status--muted">⏳ Querying ShipStation for available services (this may take 10-15 seconds)...</span>');
                 
                 $.ajax({
                     url: ajaxurl,
@@ -566,7 +566,7 @@ class HP_SS_Settings {
             });
             
             // Make custom name fields fully editable and add visual feedback
-            $('.widefat tbody tr').each(function() {
+            $('.hp-ss-service-table tbody tr').each(function() {
                 var $row = $(this);
                 var $checkbox = $row.find('input[type="checkbox"]');
                 var $nameInput = $row.find('input[type="text"]');
@@ -611,11 +611,11 @@ class HP_SS_Settings {
                 // Add visual feedback when checkbox changes
                 $checkbox.on('change', function() {
                     if ($(this).is(':checked')) {
-                        $row.css('background-color', '#f0f9ff');
-                        $nameInput.css('border-color', '#0073aa');
+                        $row.addClass('is-enabled');
+                        $nameInput.addClass('is-enabled');
                     } else {
-                        $row.css('background-color', '');
-                        $nameInput.css('border-color', '');
+                        $row.removeClass('is-enabled');
+                        $nameInput.removeClass('is-enabled');
                     }
                 });
                 
@@ -626,23 +626,95 @@ class HP_SS_Settings {
         </script>
         
         <style>
-        .widefat tbody tr {
-            transition: background-color 0.2s ease;
+        .hp-ss-settings-page .hp-ss-version {
+            color: var(--hp-admin-muted, #646970);
+            font-weight: 400;
         }
-        .widefat tbody input[type="text"] {
-            transition: border-color 0.2s ease;
+
+        .hp-ss-settings-page #hp_ss_services_config {
+            overflow-x: auto;
+        }
+
+        .hp-ss-settings-page .hp-ss-service-title {
+            margin: 18px 0 10px;
+            color: var(--hp-admin-heading, #1d2327);
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .hp-ss-settings-page .hp-ss-service-table {
+            width: 100%;
+            min-width: 760px;
+            margin: 0 0 24px;
+            border-collapse: separate;
+            border-spacing: 0;
+            overflow: hidden;
+            color-scheme: var(--hp-admin-color-scheme, light);
+        }
+
+        .hp-ss-settings-page .hp-ss-service-table thead th {
+            background: var(--hp-admin-table-header-bg, #f6f7f7) !important;
+            color: var(--hp-admin-heading, #1d2327) !important;
+            font-weight: 700;
+        }
+
+        .hp-ss-settings-page .hp-ss-service-table tbody tr {
+            background: var(--hp-admin-card-bg, #fff);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .hp-ss-settings-page .hp-ss-service-table tbody tr.is-enabled {
+            background: var(--hp-admin-table-row-hover-bg, var(--hp-admin-surface-muted, rgba(0, 115, 170, 0.08))) !important;
+        }
+
+        .hp-ss-settings-page .hp-ss-service-table td,
+        .hp-ss-settings-page .hp-ss-service-table th {
+            border-color: var(--hp-admin-divider, #c3c4c7) !important;
+            color: var(--hp-admin-text, #1d2327) !important;
+            vertical-align: middle;
+        }
+
+        .hp-ss-settings-page .hp-ss-service-table code {
+            display: inline-block;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            white-space: normal;
+            color: var(--hp-admin-text, #1d2327);
+        }
+
+        .hp-ss-settings-page .hp-ss-service-table input[type="text"] {
+            width: min(100%, 350px);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
             pointer-events: auto !important;
             user-select: text !important;
             cursor: text !important;
-            background-color: #fff !important;
+            border: var(--hp-admin-native-control-border, 1px solid #8c8f94) !important;
+            background: var(--hp-admin-input-bg, #fff) !important;
+            color: var(--hp-admin-text, #1d2327) !important;
         }
-        .widefat tbody input[type="text"]:focus {
-            outline: 2px solid #0073aa;
-            outline-offset: 0;
+
+        .hp-ss-settings-page .hp-ss-service-table input[type="text"].is-enabled {
+            border-color: var(--hp-admin-native-control-focus-border, #0073aa) !important;
         }
-        .widefat thead th {
-            background-color: #f0f0f1;
-            font-weight: 600;
+
+        .hp-ss-settings-page .hp-ss-service-table input[type="text"]::placeholder {
+            color: var(--hp-admin-native-control-placeholder, #646970);
+        }
+
+        .hp-ss-settings-page .hp-ss-service-table input[type="text"]:focus {
+            outline: none;
+            border-color: var(--hp-admin-native-control-focus-border, #0073aa) !important;
+            box-shadow: var(--hp-admin-input-focus-shadow, 0 0 0 2px rgba(0, 115, 170, 0.18));
+        }
+
+        .hp-ss-settings-page .hp-ss-status--muted {
+            color: var(--hp-admin-muted, #646970);
+        }
+
+        @media (max-width: 782px) {
+            .hp-ss-settings-page .hp-ss-service-table {
+                min-width: 680px;
+            }
         }
         </style>
         <?php
