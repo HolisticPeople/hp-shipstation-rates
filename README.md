@@ -174,6 +174,9 @@ Enable "Debug Logging" in settings to see:
 
 ## Changelog
 
+### 4.1.0 - 2026-08-02
+- Delegates ShipStation rate fetching to HP-Core's central rating service when available, with a fail-soft inline V1 fallback.
+
 ### 2.5.5 - 2026-04-18
 - Fixed checkout rate failures when `hp_ss_settings` service filters are empty or missing
 - Changed the Woo shipping method to fail open and accept returned ShipStation rates when no allow-list is configured

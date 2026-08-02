@@ -3,17 +3,24 @@
   "repo": "HolisticPeople/hp-shipstation-rates",
   "schema_version": "1.0",
   "owns": [
-    "repo-local plugin behavior to be confirmed by owning lane"
+    "Storefront live shipping rate quoting for classic WooCommerce checkout via the hp_shipstation WC shipping method (ShipStation-backed USPS/UPS rates, service allow-list with custom display names, carrier badges, quote caching)"
   ],
   "must_not_own": [
-    "cross-plugin source mutation without registered contract"
+    "cross-plugin source mutation without registered contract",
+    "ShipStation order export, tracking sync, or shipnotify handling (official woocommerce-shipstation-integration plugin plus HP-Core/HP-Inventory/HP-Checkout seams)",
+    "ShipStation credential storage (canonical store is HP-Core ShipStationSettings)"
   ],
-  "consumes": [],
+  "consumes": [
+    "HP-Core shared ShipStation credentials via hp_ss_get_shipstation_credentials() -> HP_Core\\Services\\ShipStationSettings (option hp_core_shipstation_settings; fail-soft direct option fallback)",
+    "HP-Core central rating service via \\HP_Core\\get_service('shipstation_rates') / HP_Core\\Services\\ShipStationRatesService::getCarrierRates() (since 4.1.0; fail-soft inline ShipStation V1 HTTP fallback when the provider is absent or older)"
+  ],
   "exposes": {
     "cpts": [],
     "rest": [],
     "shortcodes": [],
-    "providers": []
+    "providers": [
+      "hp_ss_get_enabled_service_codes() - enabled ShipStation service codes for consumer plugins (e.g. HP-Core ShippingService allow-list, HP Funnel Bridge)"
+    ]
   },
   "verification": {
     "staging": {
