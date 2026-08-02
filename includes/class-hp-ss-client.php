@@ -113,6 +113,23 @@ class HP_SS_Client {
             return $cached_rates;
         }
 
+        $service = self::resolve_hp_core_rates_service();
+        if ( $service !== null ) {
+            $result = $service->getCarrierRates( $request_body, array(
+                'source_surface' => 'classic_woocommerce_checkout',
+                'source_plugin' => 'hp-shipstation-rates',
+            ) );
+
+            if ( is_array( $result ) && ! empty( $result['success'] ) && is_array( $result['rates'] ?? null ) ) {
+                set_transient( $cache_key, $result['rates'], 90 );
+                return $result['rates'];
+            }
+
+            if ( is_array( $result ) && array_key_exists( 'success', $result ) ) {
+                return new WP_Error( 'hp_ss_central_service', (string) ( $result['error'] ?? 'ShipStation central rating service returned no rates.' ) );
+            }
+        }
+
         // Make API request
         $response = wp_remote_post( self::API_ENDPOINT, array(
             'headers' => $headers,
@@ -179,6 +196,30 @@ class HP_SS_Client {
         set_transient( $cache_key, $rates, 90 );
 
         return $rates;
+    }
+
+    /**
+     * Resolve HP-Core's central ShipStation rates service when available.
+     *
+     * @return object|null
+     */
+    private static function resolve_hp_core_rates_service() {
+        try {
+            if ( function_exists( '\HP_Core\get_service' ) ) {
+                $service = \HP_Core\get_service( 'shipstation_rates' );
+                return is_object( $service ) && method_exists( $service, 'getCarrierRates' ) ? $service : null;
+            }
+
+            $service_class = '\HP_Core\Services\ShipStationRatesService';
+            if ( class_exists( $service_class ) ) {
+                $service = new $service_class();
+                return method_exists( $service, 'getCarrierRates' ) ? $service : null;
+            }
+        } catch ( \Throwable $exception ) {
+            return null;
+        }
+
+        return null;
     }
 
     /**
