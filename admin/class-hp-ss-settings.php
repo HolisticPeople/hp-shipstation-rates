@@ -592,12 +592,12 @@ class HP_SS_Settings {
                 }
                 
                 $button.prop('disabled', true).text('Fetching services...');
-                $result.html('<span class="hp-ss-status hp-ss-status--muted">⏳ Querying ShipStation for available services (this may take 10-15 seconds)...</span>');
+                $result.html('<span class="hp-ss-status hp-ss-status--muted">⏳ Querying ShipStation across domestic and international destinations (this can take up to two minutes)...</span>');
                 
                 $.ajax({
                     url: ajaxurl,
                     type: 'POST',
-                    timeout: 30000,
+                    timeout: 120000,
                     data: {
                         action: 'hp_ss_fetch_services',
                         nonce: hpSsNonce,
@@ -616,8 +616,11 @@ class HP_SS_Settings {
                             $result.html('<span style="color: #dc3232;">❌ ' + response.data.message + '</span>');
                         }
                     },
-                    error: function() {
-                        $result.html('<span style="color: #dc3232;">❌ Failed to fetch services. Please try again.</span>');
+                    error: function(_xhr, textStatus) {
+                        var message = textStatus === 'timeout'
+                            ? 'ShipStation discovery is still taking longer than two minutes. Reload this page before retrying; completed results may already be available.'
+                            : 'Failed to fetch services. Please try again.';
+                        $result.html('<span style="color: #dc3232;">❌ ' + message + '</span>');
                     },
                     complete: function() {
                         $button.prop('disabled', false).text('Fetch Available Services from ShipStation');

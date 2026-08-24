@@ -18,6 +18,8 @@ $requirements = [
     ['method', "'{{FEDEX}}'", 'FedEx classic-checkout badge token'],
     ['admin', "'fedex' => array()", 'FedEx service discovery bucket'],
     ['admin', "'fedex_carrier_code'", 'resolved FedEx V1 carrier identity'],
+    ['admin', 'timeout: 120000', 'bounded multi-carrier discovery timeout'],
+    ['admin', "textStatus === 'timeout'", 'actionable discovery timeout diagnostic'],
     ['admin', 'wp_handle_upload', 'WordPress uploads-directory badge storage'],
 ];
 foreach ($requirements as [$file, $needle, $label]) {
