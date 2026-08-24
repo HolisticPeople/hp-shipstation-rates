@@ -118,14 +118,18 @@ class HP_SS_Settings {
             $sanitized['debug_enabled'] = isset( $input['debug_enabled'] ) ? 'yes' : 'no';
             $sanitized['disable_usps'] = isset( $input['disable_usps'] ) ? 'yes' : 'no';
             $sanitized['disable_ups'] = isset( $input['disable_ups'] ) ? 'yes' : 'no';
+            $sanitized['enable_fedex'] = isset( $input['enable_fedex'] ) ? 'yes' : 'no';
             $sanitized['show_badges'] = isset( $input['show_badges'] ) ? 'yes' : 'no';
         } else {
             // Partial update (e.g., from AJAX test connection) - preserve existing values
             $sanitized['debug_enabled'] = isset( $existing['debug_enabled'] ) ? $existing['debug_enabled'] : 'no';
             $sanitized['disable_usps'] = isset( $existing['disable_usps'] ) ? $existing['disable_usps'] : 'no';
             $sanitized['disable_ups'] = isset( $existing['disable_ups'] ) ? $existing['disable_ups'] : 'no';
+            $sanitized['enable_fedex'] = isset( $existing['enable_fedex'] ) ? $existing['enable_fedex'] : 'no';
             $sanitized['show_badges'] = isset( $existing['show_badges'] ) ? $existing['show_badges'] : 'yes';
         }
+        $fedex_carrier_code = sanitize_key( (string) ( $input['fedex_carrier_code'] ?? ( $existing['fedex_carrier_code'] ?? 'fedex' ) ) );
+        $sanitized['fedex_carrier_code'] = in_array( $fedex_carrier_code, array( 'fedex', 'fedex_walleted' ), true ) ? $fedex_carrier_code : 'fedex';
         
         // Handle badge file uploads
         if ( ! empty( $_FILES['usps_badge']['name'] ) ) {
@@ -140,6 +144,11 @@ class HP_SS_Settings {
         } else {
             // Keep existing badge
             $sanitized['ups_badge'] = isset( $existing['ups_badge'] ) ? $existing['ups_badge'] : '';
+        }
+        if ( ! empty( $_FILES['fedex_badge']['name'] ) ) {
+            $sanitized['fedex_badge'] = self::handle_badge_upload( 'fedex_badge' );
+        } else {
+            $sanitized['fedex_badge'] = isset( $existing['fedex_badge'] ) ? $existing['fedex_badge'] : '';
         }
 
         return $sanitized;
@@ -171,8 +180,10 @@ class HP_SS_Settings {
         // Get discovered services (stored separately)
         $discovered_services = get_option( 'hp_ss_discovered_services', array(
             'usps' => array(),
-            'ups' => array()
+            'ups' => array(),
+            'fedex' => array()
         ) );
+        $discovered_services = wp_parse_args( is_array( $discovered_services ) ? $discovered_services : array(), array( 'usps' => array(), 'ups' => array(), 'fedex' => array() ) );
 
         ?>
         <div class="wrap hp-zen-admin-surface hp-ss-settings-page">
@@ -238,6 +249,20 @@ class HP_SS_Settings {
                         </td>
                     </tr>
 
+                    <tr>
+                        <th colspan="2"><h2><?php esc_html_e( 'Enabled Carriers', 'hp-shipstation-rates' ); ?></h2></th>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e( 'Carrier availability', 'hp-shipstation-rates' ); ?></th>
+                        <td>
+                            <label><input type="checkbox" name="hp_ss_settings[disable_usps]" value="1" <?php checked( ( $settings['disable_usps'] ?? 'no' ) === 'yes' ); ?> /> <?php esc_html_e( 'Disable USPS', 'hp-shipstation-rates' ); ?></label><br />
+                            <label><input type="checkbox" name="hp_ss_settings[disable_ups]" value="1" <?php checked( ( $settings['disable_ups'] ?? 'no' ) === 'yes' ); ?> /> <?php esc_html_e( 'Disable UPS', 'hp-shipstation-rates' ); ?></label><br />
+                            <label><input type="checkbox" name="hp_ss_settings[enable_fedex]" value="1" <?php checked( ( $settings['enable_fedex'] ?? 'no' ) === 'yes' ); ?> <?php disabled( empty( $discovered_services['fedex'] ) ); ?> /> <?php esc_html_e( 'Enable FedEx', 'hp-shipstation-rates' ); ?></label>
+                            <input type="hidden" name="hp_ss_settings[fedex_carrier_code]" value="<?php echo esc_attr( $settings['fedex_carrier_code'] ?? 'fedex' ); ?>" />
+                            <p class="description"><?php echo esc_html( empty( $discovered_services['fedex'] ) ? 'FedEx remains disabled until service discovery returns at least one rate.' : 'FedEx is connected and can be enabled for its selected services.' ); ?></p>
+                        </td>
+                    </tr>
+
                     <!-- Service Discovery Section (must fetch services first) -->
                     <tr>
                         <th colspan="2">
@@ -259,11 +284,11 @@ class HP_SS_Settings {
                     </tr>
 
                     <!-- Service Configuration Section (populated after fetching) -->
-                    <tr id="hp_ss_services_config_row" style="<?php echo empty( $discovered_services['usps'] ) && empty( $discovered_services['ups'] ) ? 'display: none;' : ''; ?>">
+                    <tr id="hp_ss_services_config_row" style="<?php echo empty( $discovered_services['usps'] ) && empty( $discovered_services['ups'] ) && empty( $discovered_services['fedex'] ) ? 'display: none;' : ''; ?>">
                         <th scope="row"><?php esc_html_e( 'Configure Services', 'hp-shipstation-rates' ); ?></th>
                         <td>
                             <div id="hp_ss_services_config">
-                                <?php if ( ! empty( $discovered_services['usps'] ) || ! empty( $discovered_services['ups'] ) ) : ?>
+                                <?php if ( ! empty( $discovered_services['usps'] ) || ! empty( $discovered_services['ups'] ) || ! empty( $discovered_services['fedex'] ) ) : ?>
                                     <p class="description" style="margin-bottom: 15px;">
                                         <?php esc_html_e( 'Enable services and customize their display names. Leave name blank to use ShipStation\'s default name.', 'hp-shipstation-rates' ); ?>
                                     </p>
@@ -280,23 +305,25 @@ class HP_SS_Settings {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <?php foreach ( $discovered_services['usps'] as $code => $name ) : 
-                                                    $is_enabled = isset( $service_config[ $code ]['enabled'] ) && $service_config[ $code ]['enabled'];
-                                                    $custom_name = isset( $service_config[ $code ]['name'] ) && ! empty( $service_config[ $code ]['name'] ) ? $service_config[ $code ]['name'] : $name;
+                                                <?php foreach ( $discovered_services['usps'] as $code => $name ) :
+                                                    $config_key = 'usps:' . sanitize_key( $code );
+                                                    $entry = $service_config[ $config_key ] ?? ( $service_config[ $code ] ?? array() );
+                                                    $is_enabled = ! empty( $entry['enabled'] );
+                                                    $custom_name = ! empty( $entry['name'] ) ? $entry['name'] : $name;
                                                 ?>
                                                     <tr class="hp-ss-service-row <?php echo $is_enabled ? 'is-enabled' : ''; ?>">
                                                         <td style="text-align: center;">
-                                                            <input type="checkbox" 
-                                                                   name="hp_ss_settings[service_config][<?php echo esc_attr( $code ); ?>][enabled]" 
-                                                                   value="yes" 
+                                                            <input type="checkbox"
+                                                                   name="hp_ss_settings[service_config][<?php echo esc_attr( $config_key ); ?>][enabled]"
+                                                                   value="yes"
                                                                    <?php checked( $is_enabled ); ?> />
                                                         </td>
                                                         <td><code><?php echo esc_html( $code ); ?></code></td>
                                                         <td><?php echo esc_html( $name ); ?></td>
                                                         <td>
-                                                            <input type="text" 
-                                                                   name="hp_ss_settings[service_config][<?php echo esc_attr( $code ); ?>][name]" 
-                                                                   value="<?php echo esc_attr( $custom_name ); ?>" 
+                                                            <input type="text"
+                                                                   name="hp_ss_settings[service_config][<?php echo esc_attr( $config_key ); ?>][name]"
+                                                                   value="<?php echo esc_attr( $custom_name ); ?>"
                                                                    class="regular-text" />
                                                         </td>
                                                     </tr>
@@ -317,27 +344,51 @@ class HP_SS_Settings {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <?php foreach ( $discovered_services['ups'] as $code => $name ) : 
-                                                    $is_enabled = isset( $service_config[ $code ]['enabled'] ) && $service_config[ $code ]['enabled'];
-                                                    $custom_name = isset( $service_config[ $code ]['name'] ) && ! empty( $service_config[ $code ]['name'] ) ? $service_config[ $code ]['name'] : $name;
+                                                <?php foreach ( $discovered_services['ups'] as $code => $name ) :
+                                                    $config_key = 'ups:' . sanitize_key( $code );
+                                                    $entry = $service_config[ $config_key ] ?? ( $service_config[ $code ] ?? array() );
+                                                    $is_enabled = ! empty( $entry['enabled'] );
+                                                    $custom_name = ! empty( $entry['name'] ) ? $entry['name'] : $name;
                                                 ?>
                                                     <tr class="hp-ss-service-row <?php echo $is_enabled ? 'is-enabled' : ''; ?>">
                                                         <td style="text-align: center;">
-                                                            <input type="checkbox" 
-                                                                   name="hp_ss_settings[service_config][<?php echo esc_attr( $code ); ?>][enabled]" 
-                                                                   value="yes" 
+                                                            <input type="checkbox"
+                                                                   name="hp_ss_settings[service_config][<?php echo esc_attr( $config_key ); ?>][enabled]"
+                                                                   value="yes"
                                                                    <?php checked( $is_enabled ); ?> />
                                                         </td>
                                                         <td><code><?php echo esc_html( $code ); ?></code></td>
                                                         <td><?php echo esc_html( $name ); ?></td>
                                                         <td>
-                                                            <input type="text" 
-                                                                   name="hp_ss_settings[service_config][<?php echo esc_attr( $code ); ?>][name]" 
-                                                                   value="<?php echo esc_attr( $custom_name ); ?>" 
+                                                            <input type="text"
+                                                                   name="hp_ss_settings[service_config][<?php echo esc_attr( $config_key ); ?>][name]"
+                                                                   value="<?php echo esc_attr( $custom_name ); ?>"
                                                                    class="regular-text" />
                                                         </td>
                                                     </tr>
                                                 <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    <?php endif; ?>
+
+                                    <?php if ( ! empty( $discovered_services['fedex'] ) ) : ?>
+                                        <h4 class="hp-ss-service-title">FedEx Services:</h4>
+                                        <table class="widefat hp-ss-service-table">
+                                            <thead><tr><th style="width:50px;">Enable</th><th style="width:35%;">Service Code</th><th style="width:30%;">ShipStation Name</th><th>Custom Display Name (optional)</th></tr></thead>
+                                            <tbody>
+                                            <?php foreach ( $discovered_services['fedex'] as $code => $name ) :
+                                                $config_key = 'fedex:' . sanitize_key( $code );
+                                                $entry = $service_config[ $config_key ] ?? array();
+                                                $is_enabled = ! empty( $entry['enabled'] );
+                                                $custom_name = ! empty( $entry['name'] ) ? $entry['name'] : $name;
+                                            ?>
+                                                <tr class="hp-ss-service-row <?php echo $is_enabled ? 'is-enabled' : ''; ?>">
+                                                    <td style="text-align:center;"><input type="checkbox" name="hp_ss_settings[service_config][<?php echo esc_attr( $config_key ); ?>][enabled]" value="yes" <?php checked( $is_enabled ); ?> /></td>
+                                                    <td><code><?php echo esc_html( $code ); ?></code></td>
+                                                    <td><?php echo esc_html( $name ); ?></td>
+                                                    <td><input type="text" name="hp_ss_settings[service_config][<?php echo esc_attr( $config_key ); ?>][name]" value="<?php echo esc_attr( $custom_name ); ?>" class="regular-text" /></td>
+                                                </tr>
+                                            <?php endforeach; ?>
                                             </tbody>
                                         </table>
                                     <?php endif; ?>
@@ -416,8 +467,17 @@ class HP_SS_Settings {
                                 <?php esc_html_e( 'Display carrier badges next to shipping methods', 'hp-shipstation-rates' ); ?>
                             </label>
                             <p class="description">
-                                <?php esc_html_e( 'Shows USPS/UPS logos before the shipping method names on checkout.', 'hp-shipstation-rates' ); ?>
+                                <?php esc_html_e( 'Shows USPS, UPS, and FedEx logos before the shipping method names on checkout.', 'hp-shipstation-rates' ); ?>
                             </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e( 'FedEx Badge', 'hp-shipstation-rates' ); ?></th>
+                        <td>
+                            <?php $fedex_badge = ! empty( $settings['fedex_badge'] ) ? $settings['fedex_badge'] : HP_SS_PLUGIN_URL . 'assets/fedex-badge.svg'; ?>
+                            <p><img src="<?php echo esc_url( $fedex_badge ); ?>" alt="FedEx Badge" style="max-height:40px;background:#fff;padding:5px;border:1px solid #ddd;" /></p>
+                            <input type="file" name="fedex_badge" accept="image/png,image/jpeg,image/webp" />
+                            <p class="description"><?php esc_html_e( 'Optional custom FedEx badge. PNG, JPG, or WebP.', 'hp-shipstation-rates' ); ?></p>
                         </td>
                     </tr>
                     
@@ -437,9 +497,9 @@ class HP_SS_Settings {
                                 }
                             }
                             ?>
-                            <input type="file" name="usps_badge" accept="image/*" />
+                            <input type="file" name="usps_badge" accept="image/png,image/jpeg,image/webp" />
                             <p class="description">
-                                <?php esc_html_e( 'Upload a custom USPS badge (PNG, JPG, SVG, or WebP). Recommended: 40-60px wide × 18-24px tall.', 'hp-shipstation-rates' ); ?>
+                                <?php esc_html_e( 'Upload a custom USPS badge (PNG, JPG, or WebP). Recommended: 40-60px wide × 18-24px tall.', 'hp-shipstation-rates' ); ?>
                             </p>
                         </td>
                     </tr>
@@ -460,9 +520,9 @@ class HP_SS_Settings {
                                 }
                             }
                             ?>
-                            <input type="file" name="ups_badge" accept="image/*" />
+                            <input type="file" name="ups_badge" accept="image/png,image/jpeg,image/webp" />
                             <p class="description">
-                                <?php esc_html_e( 'Upload a custom UPS badge (PNG, JPG, SVG, or WebP). Recommended: 40-60px wide × 18-24px tall.', 'hp-shipstation-rates' ); ?>
+                                <?php esc_html_e( 'Upload a custom UPS badge (PNG, JPG, or WebP). Recommended: 40-60px wide × 18-24px tall.', 'hp-shipstation-rates' ); ?>
                             </p>
                         </td>
                     </tr>
@@ -775,7 +835,8 @@ class HP_SS_Settings {
 
         $services = array(
             'usps' => array(),
-            'ups' => array()
+            'ups' => array(),
+            'fedex' => array()
         );
 
         $credentials = array(
@@ -783,11 +844,24 @@ class HP_SS_Settings {
             'api_secret' => $api_secret,
         );
 
-        // Test destinations: US domestic + International
+        $connected_carriers = HP_SS_Client::get_carriers( $credentials );
+        $fedex_carrier_code = '';
+        if ( ! is_wp_error( $connected_carriers ) ) {
+            foreach ( $connected_carriers as $carrier ) {
+                $code = sanitize_key( (string) ( $carrier['code'] ?? ( $carrier['carrierCode'] ?? '' ) ) );
+                if ( in_array( $code, array( 'fedex', 'fedex_walleted' ), true ) ) {
+                    $fedex_carrier_code = $code;
+                    break;
+                }
+            }
+        }
+
+        // Test destinations: US domestic + representative international lanes.
         $test_destinations = array(
             array( 'postcode' => '90210', 'city' => 'Beverly Hills', 'state' => 'CA', 'country' => 'US', 'address_1' => '123 Test St', 'address_2' => '' ),
             array( 'postcode' => '2015500', 'city' => 'Yaad', 'state' => '', 'country' => 'IL', 'address_1' => 'Test St', 'address_2' => '' ),
-            array( 'postcode' => 'SW1A 1AA', 'city' => 'London', 'state' => '', 'country' => 'GB', 'address_1' => 'Test St', 'address_2' => '' )
+            array( 'postcode' => 'SW1A 1AA', 'city' => 'London', 'state' => '', 'country' => 'GB', 'address_1' => 'Test St', 'address_2' => '' ),
+            array( 'postcode' => '00000', 'city' => 'Dubai', 'state' => 'DU', 'country' => 'AE', 'address_1' => 'Test St', 'address_2' => '' )
         );
 
         // Fetch services from multiple destinations to get comprehensive list
@@ -811,17 +885,41 @@ class HP_SS_Settings {
                     }
                 }
             }
+
+            if ( $fedex_carrier_code !== '' ) {
+                $fedex_rates = HP_SS_Client::get_rates( $from_address, $to_address, $test_package, $fedex_carrier_code, $credentials );
+                if ( ! is_wp_error( $fedex_rates ) && is_array( $fedex_rates ) ) {
+                    foreach ( $fedex_rates as $rate ) {
+                        if ( isset( $rate['serviceCode'], $rate['serviceName'] ) ) {
+                            $services['fedex'][ sanitize_key( (string) $rate['serviceCode'] ) ] = sanitize_text_field( (string) $rate['serviceName'] );
+                        }
+                    }
+                }
+            }
         }
 
-        if ( empty( $services['usps'] ) && empty( $services['ups'] ) ) {
+        if ( empty( $services['usps'] ) && empty( $services['ups'] ) && empty( $services['fedex'] ) ) {
             wp_send_json_error( array( 'message' => __( 'No services found. Please check your credentials.', 'hp-shipstation-rates' ) ) );
         }
 
         // Store discovered services for the UI
         update_option( 'hp_ss_discovered_services', $services );
+        $settings = get_option( 'hp_ss_settings', array() );
+        if ( is_array( $settings ) ) {
+            $settings['fedex_carrier_code'] = $fedex_carrier_code !== '' ? $fedex_carrier_code : 'fedex';
+            if ( empty( $services['fedex'] ) ) {
+                $settings['enable_fedex'] = 'no';
+            }
+            update_option( 'hp_ss_settings', $settings );
+        }
+        update_option( 'hp_ss_carrier_discovery', array(
+            'fedex_connected' => $fedex_carrier_code !== '',
+            'fedex_carrier_code' => $fedex_carrier_code,
+            'last_discovered_gmt' => gmdate( 'c' ),
+        ) );
 
         wp_send_json_success( array(
-            'message' => sprintf( __( 'Found %d USPS and %d UPS services (domestic + international)', 'hp-shipstation-rates' ), count( $services['usps'] ), count( $services['ups'] ) ),
+            'message' => sprintf( __( 'Found %d USPS, %d UPS, and %d FedEx services (domestic + international)', 'hp-shipstation-rates' ), count( $services['usps'] ), count( $services['ups'] ), count( $services['fedex'] ) ),
             'services' => $services,
             'reload' => true  // Tell frontend to reload the page to show configuration UI
         ) );
@@ -855,28 +953,13 @@ class HP_SS_Settings {
             'mimes' => array(
                 'jpg|jpeg|jpe' => 'image/jpeg',
                 'png' => 'image/png',
-                'svg' => 'image/svg+xml',
                 'webp' => 'image/webp'
             )
         );
-        
-        // Move uploaded file to plugin assets directory
-        $plugin_dir = HP_SS_PLUGIN_DIR . 'assets/';
-        $filename = $file_key . '.' . pathinfo( $uploadedfile['name'], PATHINFO_EXTENSION );
-        $target_file = $plugin_dir . $filename;
-        
-        // Ensure directory exists
-        if ( ! file_exists( $plugin_dir ) ) {
-            wp_mkdir_p( $plugin_dir );
-        }
-        
-        // Move the file
-        if ( move_uploaded_file( $uploadedfile['tmp_name'], $target_file ) ) {
-            // Return the URL to the uploaded file
-            return HP_SS_PLUGIN_URL . 'assets/' . $filename;
-        }
-        
-        return '';
+        $result = wp_handle_upload( $uploadedfile, $upload_overrides );
+        return is_array( $result ) && empty( $result['error'] ) && ! empty( $result['url'] )
+            ? esc_url_raw( (string) $result['url'] )
+            : '';
     }
 }
 

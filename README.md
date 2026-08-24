@@ -1,13 +1,13 @@
 # HP ShipStation Rates - WooCommerce Shipping Plugin
 
-**Version:** 4.0.2
+**Version:** 4.2.0
 **Requires:** WordPress 5.8+, WooCommerce 5.0+  
 **License:** Proprietary  
 **Author:** Holistic People
 
 ## Description
 
-Minimal, high-performance WooCommerce shipping method that fetches real-time USPS and UPS shipping quotes from ShipStation V1 API. Features dynamic service discovery, intelligent ZIP-only caching, and professional admin UI for complete control over shipping options.
+WooCommerce shipping method that fetches real-time USPS, UPS, and opt-in FedEx quotes from ShipStation. FedEx stays disabled until connected-carrier discovery and an international rate probe return services. The plugin uses carrier-qualified service settings, intelligent destination/cart/config caching, and an accessible storefront badge.
 
 ## Release Notes
 
