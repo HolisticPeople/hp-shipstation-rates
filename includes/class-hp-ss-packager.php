@@ -92,9 +92,11 @@ class HP_SS_Packager {
             $max_height = $default_height;
         }
 
-        // Round to 2 decimal places and ensure minimum of 1
+        // Preserve the exact converted positive weight used for quoting. This
+        // adapter remains for legacy compatibility; HP Checkout is the only
+        // supported customer checkout and obtains rates through HP Core.
         return array(
-            'weight' => max( 0.1, round( $total_weight, 2 ) ),
+            'weight' => $total_weight,
             'length' => max( 1, round( $max_length, 2 ) ),
             'width' => max( 1, round( $max_width, 2 ) ),
             'height' => max( 1, round( $max_height, 2 ) )

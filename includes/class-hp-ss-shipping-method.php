@@ -24,7 +24,7 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         $this->id = 'hp_shipstation';
         $this->instance_id = absint( $instance_id );
         $this->method_title = __( 'HP ShipStation Rates', 'hp-shipstation-rates' );
-        $this->method_description = __( 'Get real-time USPS and UPS shipping rates from ShipStation.', 'hp-shipstation-rates' );
+        $this->method_description = __( 'Get real-time USPS, UPS, and enabled FedEx shipping rates from ShipStation.', 'hp-shipstation-rates' );
         $this->supports = array(
             'shipping-zones',
             'instance-settings',
@@ -122,8 +122,12 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         );
         $dest_hash = md5( wp_json_encode( $dest_key ) );
         
-        $session_key = 'hp_ss_session_' . $dest_hash . '_' . $cart_hash;
-        $rates_cache_key = 'hp_ss_rates_cache_' . $dest_hash . '_' . $cart_hash;
+        $config_hash = md5( wp_json_encode( array(
+            'carriers' => function_exists( 'hp_ss_get_enabled_carrier_codes' ) ? hp_ss_get_enabled_carrier_codes() : array( 'stamps_com', 'ups_walleted' ),
+            'services' => $settings['service_config'] ?? array(),
+        ) ) );
+        $session_key = 'hp_ss_session_' . $dest_hash . '_' . $cart_hash . '_' . $config_hash;
+        $rates_cache_key = 'hp_ss_rates_cache_' . $dest_hash . '_' . $cart_hash . '_' . $config_hash;
         
         // Check if we have cached rates for this exact ZIP + cart combination
         $cached_rates = get_transient( $rates_cache_key );
@@ -219,6 +223,11 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             // Check if carriers are disabled for performance
             $disable_usps = isset( $settings['disable_usps'] ) && $settings['disable_usps'] === 'yes';
             $disable_ups = isset( $settings['disable_ups'] ) && $settings['disable_ups'] === 'yes';
+            $enable_fedex = isset( $settings['enable_fedex'] ) && $settings['enable_fedex'] === 'yes';
+            $fedex_carrier_code = sanitize_key( (string) ( $settings['fedex_carrier_code'] ?? 'fedex' ) );
+            if ( ! in_array( $fedex_carrier_code, array( 'fedex', 'fedex_walleted' ), true ) ) {
+                $fedex_carrier_code = 'fedex';
+            }
     
             $all_rates = array();
 
@@ -232,7 +241,7 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             if ( $has_usps_services && ! $disable_usps ) {
                 $usps_rates = HP_SS_Client::get_rates( $from_address, $to_address, $package_data, 'stamps_com' );
                 if ( ! is_wp_error( $usps_rates ) && is_array( $usps_rates ) ) {
-                    $all_rates = array_merge( $all_rates, $this->filter_rates( $usps_rates, $service_config, 'USPS', $usps_services_legacy ) );
+                    $all_rates = array_merge( $all_rates, $this->filter_rates( $usps_rates, $service_config, 'USPS', $usps_services_legacy, 'usps' ) );
                 } elseif ( is_wp_error( $usps_rates ) && $debug_enabled ) {
                     error_log( '[HP SS Method] USPS rates error: ' . $usps_rates->get_error_message() );
                 }
@@ -242,9 +251,24 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             if ( $has_ups_services && ! $disable_ups ) {
                 $ups_rates = HP_SS_Client::get_rates( $from_address, $to_address, $package_data, 'ups_walleted' );
                 if ( ! is_wp_error( $ups_rates ) && is_array( $ups_rates ) ) {
-                    $all_rates = array_merge( $all_rates, $this->filter_rates( $ups_rates, $service_config, 'UPS', $ups_services_legacy ) );
+                    $all_rates = array_merge( $all_rates, $this->filter_rates( $ups_rates, $service_config, 'UPS', $ups_services_legacy, 'ups' ) );
                 } elseif ( is_wp_error( $ups_rates ) && $debug_enabled ) {
                     error_log( '[HP SS Method] UPS rates error: ' . $ups_rates->get_error_message() );
+                }
+            }
+
+            if ( $enable_fedex ) {
+                $fedex_rates = HP_SS_Client::get_rates( $from_address, $to_address, $package_data, $fedex_carrier_code );
+                if ( ! is_wp_error( $fedex_rates ) && is_array( $fedex_rates ) ) {
+                    $all_rates = array_merge( $all_rates, $this->filter_rates( $fedex_rates, $service_config, 'FedEx', array(), 'fedex' ) );
+                } elseif ( is_wp_error( $fedex_rates ) ) {
+                    $this->emit_monitor_event( 'shipstation.quote.carrier_failed', $this->monitor_context( $destination, $package, array(
+                        'carrier_code' => $fedex_carrier_code,
+                        'reason' => sanitize_key( $fedex_rates->get_error_code() ),
+                    ) ) );
+                    if ( $debug_enabled ) {
+                        error_log( '[HP SS Method] FedEx rates error: ' . $fedex_rates->get_error_message() );
+                    }
                 }
             }
     
@@ -430,7 +454,7 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
      * @param array $legacy_services Legacy format (array of service codes) for backward compatibility
      * @return array Filtered rates in WooCommerce format
      */
-    private function filter_rates( $rates, $service_config, $carrier_name, $legacy_services = array() ) {
+    private function filter_rates( $rates, $service_config, $carrier_name, $legacy_services = array(), $carrier_key = '' ) {
         $filtered_rates = array();
         $settings = get_option( 'hp_ss_settings', array() );
         $debug_enabled = isset( $settings['debug_enabled'] ) && $settings['debug_enabled'] === 'yes';
@@ -441,6 +465,7 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             }
 
             $service_code = $rate['serviceCode'];
+            $service_key = sanitize_key( $carrier_key ) . ':' . sanitize_key( $service_code );
             $service_name = $rate['serviceName'];
             // ShipStation returns the base postage in shipmentCost and any surcharges
             // (fuel, remote area, additional handling, etc.) in otherCost.
@@ -453,9 +478,12 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
             $is_enabled = empty( $service_config ) && empty( $legacy_services );
             $custom_name = '';
             
-            if ( isset( $service_config[ $service_code ] ) ) {
-                $is_enabled = $service_config[ $service_code ]['enabled'];
-                $custom_name = $service_config[ $service_code ]['name'];
+            $service_entry = isset( $service_config[ $service_key ] )
+                ? $service_config[ $service_key ]
+                : ( $service_config[ $service_code ] ?? null );
+            if ( is_array( $service_entry ) ) {
+                $is_enabled = ! empty( $service_entry['enabled'] );
+                $custom_name = (string) ( $service_entry['name'] ?? '' );
             } elseif ( ! empty( $legacy_services ) && in_array( $service_code, $legacy_services, true ) ) {
                 // Fall back to legacy format
                 $is_enabled = true;
@@ -466,12 +494,14 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
                 $display_name = ! empty( $custom_name ) ? $custom_name : $service_name;
                 
                 $filtered_rates[] = array(
-                    'id' => 'hp_ss_' . sanitize_title( $service_code ),
+                    'id' => 'hp_ss_' . sanitize_title( $carrier_key . '_' . $service_code ),
                     'label' => $display_name,
                     'cost' => $cost,
                     'meta_data' => array(
                         'carrier' => $carrier_name,
+                        'carrier_code' => $carrier_key,
                         'service_code' => $service_code,
+                        'service_key' => $service_key,
                         'original_name' => $service_name,
                         // Store breakdown for debugging / future display if needed.
                         'shipment_cost' => $shipment_cost,
@@ -535,7 +565,7 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         
         // Check if badges are enabled
         $settings = get_option( 'hp_ss_settings', array() );
-        $show_badges = isset( $settings['show_badges'] ) && $settings['show_badges'] === 'yes';
+        $show_badges = isset( $settings['show_badges'] ) ? $settings['show_badges'] === 'yes' : true;
         
         if ( ! $show_badges ) {
             return; // Badges disabled, don't output script
@@ -549,6 +579,10 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
         $ups_badge_url = isset( $settings['ups_badge'] ) && ! empty( $settings['ups_badge'] ) 
             ? $settings['ups_badge'] 
             : HP_SS_PLUGIN_URL . 'assets/ups-badge.png';
+
+        $fedex_badge_url = isset( $settings['fedex_badge'] ) && ! empty( $settings['fedex_badge'] )
+            ? $settings['fedex_badge']
+            : HP_SS_PLUGIN_URL . 'assets/fedex-badge.svg';
         
         ?>
         <style type="text/css">
@@ -609,6 +643,10 @@ class HP_SS_Shipping_Method extends WC_Shipping_Method {
                                 if (html.indexOf('{{UPS}}') !== -1) {
                                     var badge = '<img src="<?php echo esc_url( $ups_badge_url ); ?>" alt="UPS" class="hp-ss-badge hp-ss-ups" style="display:inline-block;height:24px;width:auto;vertical-align:middle;margin-right:8px;" />';
                                     $label.html(html.replace(/\{\{UPS\}\}/g, badge));
+                                }
+                                if (html.indexOf('{{FEDEX}}') !== -1) {
+                                    var badge = '<img src="<?php echo esc_url( $fedex_badge_url ); ?>" alt="FedEx" class="hp-ss-badge hp-ss-fedex" style="display:inline-block;height:24px;width:auto;vertical-align:middle;margin-right:8px;" />';
+                                    $label.html(html.replace(/\{\{FEDEX\}\}/g, badge));
                                 }
                             });
                         } catch (e) {
