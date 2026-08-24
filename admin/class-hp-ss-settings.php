@@ -108,16 +108,25 @@ class HP_SS_Settings {
         $sanitized['default_height'] = isset( $input['default_height'] ) && is_numeric( $input['default_height'] ) ? floatval( $input['default_height'] ) : ( isset( $existing['default_height'] ) ? $existing['default_height'] : 12 );
         $sanitized['default_weight'] = isset( $input['default_weight'] ) && is_numeric( $input['default_weight'] ) ? floatval( $input['default_weight'] ) : ( isset( $existing['default_weight'] ) ? $existing['default_weight'] : 1 );
 
-        // Checkboxes - preserve existing if not present in form (e.g., from AJAX calls)
-        // Note: Checkboxes are only present in $_POST when checked
-        // Detect if this is a full form submission by checking for default_length (always present in form)
+        // Checkboxes - preserve existing if not present in form (e.g., from AJAX calls).
+        // Carrier controls use positive UI semantics while retaining the legacy
+        // disable_usps/disable_ups option keys for runtime compatibility.
+        // Detect a full form submission by checking for default_length (always present in form).
         $is_full_form = isset( $input['default_length'] );
         
         if ( $is_full_form ) {
             // Full form submission - checkboxes not present means unchecked
             $sanitized['debug_enabled'] = isset( $input['debug_enabled'] ) ? 'yes' : 'no';
-            $sanitized['disable_usps'] = isset( $input['disable_usps'] ) ? 'yes' : 'no';
-            $sanitized['disable_ups'] = isset( $input['disable_ups'] ) ? 'yes' : 'no';
+            $uses_positive_carrier_controls = isset( $input['carrier_controls_semantics'] )
+                && $input['carrier_controls_semantics'] === 'positive-v1';
+            if ( $uses_positive_carrier_controls ) {
+                $sanitized['disable_usps'] = isset( $input['enable_usps'] ) ? 'no' : 'yes';
+                $sanitized['disable_ups'] = isset( $input['enable_ups'] ) ? 'no' : 'yes';
+            } else {
+                // Backward compatibility for a previously loaded v4.2.0 form.
+                $sanitized['disable_usps'] = isset( $input['disable_usps'] ) ? 'yes' : 'no';
+                $sanitized['disable_ups'] = isset( $input['disable_ups'] ) ? 'yes' : 'no';
+            }
             $sanitized['enable_fedex'] = isset( $input['enable_fedex'] ) ? 'yes' : 'no';
             $sanitized['show_badges'] = isset( $input['show_badges'] ) ? 'yes' : 'no';
         } else {
@@ -255,11 +264,12 @@ class HP_SS_Settings {
                     <tr>
                         <th scope="row"><?php esc_html_e( 'Carrier availability', 'hp-shipstation-rates' ); ?></th>
                         <td>
-                            <label><input type="checkbox" name="hp_ss_settings[disable_usps]" value="1" <?php checked( ( $settings['disable_usps'] ?? 'no' ) === 'yes' ); ?> /> <?php esc_html_e( 'Disable USPS', 'hp-shipstation-rates' ); ?></label><br />
-                            <label><input type="checkbox" name="hp_ss_settings[disable_ups]" value="1" <?php checked( ( $settings['disable_ups'] ?? 'no' ) === 'yes' ); ?> /> <?php esc_html_e( 'Disable UPS', 'hp-shipstation-rates' ); ?></label><br />
+                            <input type="hidden" name="hp_ss_settings[carrier_controls_semantics]" value="positive-v1" />
+                            <label><input type="checkbox" name="hp_ss_settings[enable_usps]" value="1" <?php checked( ( $settings['disable_usps'] ?? 'no' ) !== 'yes' ); ?> /> <?php esc_html_e( 'Enable USPS', 'hp-shipstation-rates' ); ?></label><br />
+                            <label><input type="checkbox" name="hp_ss_settings[enable_ups]" value="1" <?php checked( ( $settings['disable_ups'] ?? 'no' ) !== 'yes' ); ?> /> <?php esc_html_e( 'Enable UPS', 'hp-shipstation-rates' ); ?></label><br />
                             <label><input type="checkbox" name="hp_ss_settings[enable_fedex]" value="1" <?php checked( ( $settings['enable_fedex'] ?? 'no' ) === 'yes' ); ?> <?php disabled( empty( $discovered_services['fedex'] ) ); ?> /> <?php esc_html_e( 'Enable FedEx', 'hp-shipstation-rates' ); ?></label>
                             <input type="hidden" name="hp_ss_settings[fedex_carrier_code]" value="<?php echo esc_attr( $settings['fedex_carrier_code'] ?? 'fedex' ); ?>" />
-                            <p class="description"><?php echo esc_html( empty( $discovered_services['fedex'] ) ? 'FedEx remains disabled until service discovery returns at least one rate.' : 'FedEx is connected and can be enabled for its selected services.' ); ?></p>
+                            <p class="description"><?php echo esc_html( empty( $discovered_services['fedex'] ) ? 'Enable the connected carriers to request their selected services. FedEx becomes available after service discovery returns at least one rate.' : 'Enable each connected carrier whose selected services should be offered at checkout.' ); ?></p>
                         </td>
                     </tr>
 

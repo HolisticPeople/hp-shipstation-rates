@@ -1,6 +1,6 @@
 # HP ShipStation Rates - WooCommerce Shipping Plugin
 
-**Version:** 4.2.0
+**Version:** 4.2.1
 **Requires:** WordPress 5.8+, WooCommerce 5.0+  
 **License:** Proprietary  
 **Author:** Holistic People
@@ -10,6 +10,17 @@
 WooCommerce shipping method that fetches real-time USPS, UPS, and opt-in FedEx quotes from ShipStation. FedEx stays disabled until connected-carrier discovery and an international rate probe return services. The plugin uses carrier-qualified service settings, intelligent destination/cart/config caching, and an accessible storefront badge.
 
 ## Release Notes
+
+### 4.2.1
+
+- Uses consistent positive **Enable USPS**, **Enable UPS**, and **Enable FedEx** carrier controls.
+- Preserves the legacy `disable_usps` and `disable_ups` option keys internally for backward compatibility.
+- Distinguishes new positive forms from cached legacy forms so either form saves the intended carrier state.
+
+### 4.2.0
+
+- Added opt-in FedEx discovery, service configuration, live rates, and storefront badges.
+- Added carrier-qualified service identities and partial-carrier failure handling.
 
 ### 4.0.2
 
@@ -97,9 +108,10 @@ WooCommerce shipping method that fetches real-time USPS, UPS, and opt-in FedEx q
 ### Debug Settings
 - **Enable Debug Logging** - Log API requests to `wp-content/debug.log`
 
-### Performance Settings
-- **Disable USPS** - Temporarily disable USPS to speed up testing
-- **Disable UPS** - Temporarily disable UPS to speed up testing
+### Carrier Availability
+- **Enable USPS** - Request enabled USPS services from ShipStation
+- **Enable UPS** - Request enabled UPS services from ShipStation
+- **Enable FedEx** - Request enabled FedEx services after successful discovery
 
 ## Cache Behavior
 

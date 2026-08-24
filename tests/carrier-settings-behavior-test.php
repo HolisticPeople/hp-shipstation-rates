@@ -57,6 +57,9 @@ $sanitized = HP_SS_Settings::sanitize_settings([
     'default_width' => '10',
     'default_height' => '8',
     'default_weight' => '2',
+    'carrier_controls_semantics' => 'positive-v1',
+    'enable_usps' => '1',
+    'enable_ups' => '1',
     'enable_fedex' => '1',
     'fedex_carrier_code' => 'fedex_walleted',
     'service_config' => [
@@ -64,11 +67,48 @@ $sanitized = HP_SS_Settings::sanitize_settings([
     ],
 ]);
 carrier_settings_assert_same('yes', $sanitized['enable_fedex'], 'full settings save preserves explicit FedEx enablement');
+carrier_settings_assert_same('no', $sanitized['disable_usps'], 'positive USPS control translates to the legacy enabled state');
+carrier_settings_assert_same('no', $sanitized['disable_ups'], 'positive UPS control translates to the legacy enabled state');
 carrier_settings_assert_same('fedex_walleted', $sanitized['fedex_carrier_code'], 'settings save preserves allowlisted FedEx V1 code');
 carrier_settings_assert_same(
     ['enabled' => true, 'name' => 'International Priority'],
     $sanitized['service_config']['fedex:fedex_international_priority'],
     'settings save preserves and sanitizes the carrier-qualified service entry'
+);
+
+$positiveDisabled = HP_SS_Settings::sanitize_settings([
+    'default_length' => '12',
+    'carrier_controls_semantics' => 'positive-v1',
+    'enable_ups' => '1',
+]);
+carrier_settings_assert_same('yes', $positiveDisabled['disable_usps'], 'unchecked positive USPS control disables USPS');
+carrier_settings_assert_same('no', $positiveDisabled['disable_ups'], 'checked positive UPS control enables UPS');
+carrier_settings_assert_same('no', $positiveDisabled['enable_fedex'], 'unchecked positive FedEx control disables FedEx');
+
+$legacyForm = HP_SS_Settings::sanitize_settings([
+    'default_length' => '12',
+    'disable_usps' => '1',
+]);
+carrier_settings_assert_same('yes', $legacyForm['disable_usps'], 'cached legacy negative USPS form remains compatible');
+carrier_settings_assert_same('no', $legacyForm['disable_ups'], 'cached legacy negative UPS form remains compatible');
+
+$GLOBALS['hp_ss_test_options']['hp_ss_settings'] = [
+    'disable_usps' => 'no',
+    'disable_ups' => 'yes',
+    'enable_fedex' => 'yes',
+    'service_config' => [
+        'usps:usps_priority_mail' => ['enabled' => true, 'name' => 'Priority Mail'],
+        'fedex:fedex_international_economy' => ['enabled' => true, 'name' => 'International Economy'],
+    ],
+];
+$partial = HP_SS_Settings::sanitize_settings([]);
+carrier_settings_assert_same('no', $partial['disable_usps'], 'partial update preserves USPS carrier state');
+carrier_settings_assert_same('yes', $partial['disable_ups'], 'partial update preserves UPS carrier state');
+carrier_settings_assert_same('yes', $partial['enable_fedex'], 'partial update preserves FedEx carrier state');
+carrier_settings_assert_same(
+    $GLOBALS['hp_ss_test_options']['hp_ss_settings']['service_config'],
+    $partial['service_config'],
+    'partial update preserves service selections'
 );
 
 fwrite(STDOUT, "Carrier settings behavior passed.\n");

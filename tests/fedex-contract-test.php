@@ -18,6 +18,9 @@ $requirements = [
     ['method', "'{{FEDEX}}'", 'FedEx classic-checkout badge token'],
     ['admin', "'fedex' => array()", 'FedEx service discovery bucket'],
     ['admin', "'fedex_carrier_code'", 'resolved FedEx V1 carrier identity'],
+    ['admin', 'carrier_controls_semantics', 'versioned positive carrier controls'],
+    ['admin', "'enable_usps'", 'positive USPS carrier control'],
+    ['admin', "'enable_ups'", 'positive UPS carrier control'],
     ['admin', 'timeout: 120000', 'bounded multi-carrier discovery timeout'],
     ['admin', "textStatus === 'timeout'", 'actionable discovery timeout diagnostic'],
     ['admin', 'wp_handle_upload', 'WordPress uploads-directory badge storage'],
@@ -27,6 +30,14 @@ foreach ($requirements as [$file, $needle, $label]) {
         fwrite(STDERR, "FAIL: Missing {$label}.\n");
         exit(1);
     }
+}
+if (str_contains($files['admin'], "esc_html_e( 'Disable USPS'")) {
+    fwrite(STDERR, "FAIL: Admin UI still exposes negative USPS carrier semantics.\n");
+    exit(1);
+}
+if (str_contains($files['admin'], "esc_html_e( 'Disable UPS'")) {
+    fwrite(STDERR, "FAIL: Admin UI still exposes negative UPS carrier semantics.\n");
+    exit(1);
 }
 if (!is_file($root . '/assets/fedex-badge.svg')) {
     fwrite(STDERR, "FAIL: Missing bundled FedEx badge.\n");
