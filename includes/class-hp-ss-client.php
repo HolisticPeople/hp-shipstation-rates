@@ -27,7 +27,7 @@ class HP_SS_Client {
      * @param array $from_address From address array
      * @param array $to_address To address array
      * @param array $package Package data (weight, dimensions)
-     * @param string $carrier_code Carrier code ('stamps_com' for USPS, 'ups_walleted' for UPS)
+     * @param string $carrier_code Carrier code (for example stamps_com, ups_walleted, or fedex)
      * @param array|null $credentials Optional credentials override
      * @return array|WP_Error Array of rates or WP_Error on failure
      */
@@ -297,6 +297,39 @@ class HP_SS_Client {
                 'message' => sprintf( __( 'API returned error %d', 'hp-shipstation-rates' ), $response_code )
             );
         }
+    }
+
+    /**
+     * List connected ShipStation V1 carriers for carrier-code discovery.
+     *
+     * @return array|WP_Error
+     */
+    public static function get_carriers( $credentials = null ) {
+        $resolved = is_array( $credentials ) ? $credentials : array();
+        if ( empty( $resolved['api_key'] ) || empty( $resolved['api_secret'] ) ) {
+            $resolved = function_exists( 'hp_ss_get_shipstation_credentials' )
+                ? hp_ss_get_shipstation_credentials()
+                : get_option( 'hp_core_shipstation_settings', array() );
+        }
+        if ( empty( $resolved['api_key'] ) || empty( $resolved['api_secret'] ) ) {
+            return new WP_Error( 'missing_credentials', __( 'ShipStation API credentials not configured.', 'hp-shipstation-rates' ) );
+        }
+        $response = wp_remote_get( 'https://ssapi.shipstation.com/carriers', array(
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode( $resolved['api_key'] . ':' . $resolved['api_secret'] ),
+            ),
+            'timeout' => 20,
+        ) );
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
+        $status = (int) wp_remote_retrieve_response_code( $response );
+        if ( 200 !== $status ) {
+            return new WP_Error( 'api_error', sprintf( __( 'ShipStation carrier discovery returned HTTP %d.', 'hp-shipstation-rates' ), $status ) );
+        }
+        $carriers = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+        return is_array( $carriers ) ? $carriers : new WP_Error( 'decode_error', __( 'ShipStation returned an invalid carrier list.', 'hp-shipstation-rates' ) );
     }
 }
 

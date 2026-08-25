@@ -2,8 +2,8 @@
 /**
  * Plugin Name: HP ShipStation Rates
  * Plugin URI: https://holisticpeople.com/
- * Description: Minimal WooCommerce shipping method that fetches real-time USPS and UPS quotes from ShipStation V1 API (with quick mode to prevent ghost orders).
- * Version: 4.1.0
+ * Description: WooCommerce shipping method that fetches real-time USPS, UPS, and enabled FedEx quotes from ShipStation (with quick mode to prevent ghost orders).
+ * Version: 4.2.2
  * Author: Holistic People
  * Author URI: https://holisticpeople.com/
  * Text Domain: hp-shipstation-rates
@@ -28,7 +28,7 @@ if (PHP_VERSION_ID < 80500) {
 }
 
 // Define plugin constants
-define( 'HP_SS_VERSION', '4.1.0' );
+define( 'HP_SS_VERSION', '4.2.2' );
 define( 'HP_SS_PLUGIN_FILE', __FILE__ );
 define( 'HP_SS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HP_SS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -162,7 +162,9 @@ function hp_ss_get_enabled_service_codes(): array {
         foreach ( $settings['service_config'] as $service_code => $config ) {
             $enabled = isset( $config['enabled'] ) && ( $config['enabled'] === true || $config['enabled'] === 'yes' || $config['enabled'] === 1 || $config['enabled'] === '1' );
             if ( $enabled ) {
-                $codes[] = strtolower( trim( (string) $service_code ) );
+                $service_code = strtolower( trim( (string) $service_code ) );
+                $parts = explode( ':', $service_code, 2 );
+                $codes[] = count( $parts ) === 2 ? $parts[1] : $service_code;
             }
         }
     }
@@ -184,4 +186,49 @@ function hp_ss_get_enabled_service_codes(): array {
     // Normalize and return unique list
     $codes = array_values( array_unique( array_filter( $codes, function( $c ) { return $c !== ''; } ) ) );
     return $codes;
+}
+
+/**
+ * Return carrier-qualified enabled service identities.
+ *
+ * @return string[] Values such as fedex:fedex_international_priority.
+ */
+function hp_ss_get_enabled_service_keys(): array {
+    $settings = get_option( 'hp_ss_settings', array() );
+    $keys = array();
+    foreach ( (array) ( $settings['service_config'] ?? array() ) as $service_key => $config ) {
+        $enabled = ! empty( $config['enabled'] ) && in_array( $config['enabled'], array( true, 'yes', 1, '1' ), true );
+        if ( ! $enabled ) {
+            continue;
+        }
+        $service_key = strtolower( trim( (string) $service_key ) );
+        if ( $service_key !== '' ) {
+            $keys[] = $service_key;
+        }
+    }
+    return array_values( array_unique( $keys ) );
+}
+
+/**
+ * Return the enabled ShipStation V1 carrier codes for all rate consumers.
+ * FedEx is intentionally opt-in until service discovery succeeds.
+ *
+ * @return string[]
+ */
+function hp_ss_get_enabled_carrier_codes(): array {
+    $settings = get_option( 'hp_ss_settings', array() );
+    $codes = array();
+    if ( ( $settings['disable_usps'] ?? 'no' ) !== 'yes' ) {
+        $codes[] = 'stamps_com';
+    }
+    if ( ( $settings['disable_ups'] ?? 'no' ) !== 'yes' ) {
+        $codes[] = 'ups_walleted';
+    }
+    if ( ( $settings['enable_fedex'] ?? 'no' ) === 'yes' ) {
+        $fedex_code = sanitize_key( (string) ( $settings['fedex_carrier_code'] ?? 'fedex' ) );
+        if ( in_array( $fedex_code, array( 'fedex', 'fedex_walleted' ), true ) ) {
+            $codes[] = $fedex_code;
+        }
+    }
+    return array_values( array_unique( $codes ) );
 }
