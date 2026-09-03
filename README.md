@@ -1,3 +1,7 @@
+# 4.2.3 — Optional delivery estimate contract
+
+Adds a pure, fail-soft delivery estimator for HP Checkout. Rules default empty; synthetic tests do not authorize production policies. No rate, backend, credential, label, or tracking behavior changes. See [contract](docs/delivery-promise-v1.md).
+
 # HP ShipStation Rates - WooCommerce Shipping Plugin
 
 **Version:** 4.2.1

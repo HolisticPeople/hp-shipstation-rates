@@ -1,0 +1,13 @@
+# Delivery promise v1
+
+Public server-only `hp_ss_get_delivery_promise_v1(array $context): array` is a pure optional calculation. No HTTP, label, order, tracking, credential, backend or price mutation.
+
+Input: `service_key` exact carrier:service, `destination` with country/state/postcode, `evaluated_at` server RFC3339 timestamp. Caller-supplied transit/rule assertions are ignored. Success: version1/status ready/promise{version1,latest_date YYYY-MM-DD,semantics_version hp-ss-delivery-v1:RULE_ID,includes_handling true} plus private provenance{rule_id,source,evaluated_at,dispatch_date,handling_calendar,timezone,handling_max_days,cutoff,transit_max_days,transit_day_type,transit_calendar}. Failure: version1/status unavailable/reason; no checkout blocker.
+
+Owner option `hp_ss_delivery_transit_rules_v1` defaults empty, structured `{version:1,rules:[...]}`. Each rule requires approved=true, id, exact service_key, country, explicit states[], integer max_days1–60, source, day_type and matching calendar. Calendar_days requires calendar; business_days requires us_federal_mon_fri. Transit rules are transit-only: includes_handling=true is rejected rather than counted twice. Invalid/unapproved rules do not apply; multiple matching rules fail ambiguous. No production rule, candidate5/3/3/7/9day map or wildcard destination is shipped or approved by this code.
+
+Confirmed handling:18:00 America/New_York cutoff, max2 full business days, Mon–Fri excluding11 nationwide US federal holidays with Saturday→Friday/Sunday→Monday observance; DST-aware. Eligible anchor excluded. At/after cutoff or closed day, roll to next eligible anchor then add2 full business days. Reviewed examples: Fri2026-09-04 17:59→dispatchWed09; at18:00→Thu10 because Monday is LaborDay. Adjacent-year NewYear observance is handled. DC-specific InaugurationDay is not a nationwide warehouse holiday.
+
+Transit uses its own explicit rule calendar; calendar transit does not inherit handling weekends. Checkout calls for optional quote metadata and recalculates at snapshot freeze with current server time. Frozen provenance remains private. A revoked/missing policy must not reuse earlier display estimates. Independent already handling-inclusive trusted promises are preserved without another handling addition.
+
+Canonical ownership: HP-Codex-Skills/skills/hp-roadmap/references/roadmaps/hp-google-customer-reviews-contract-2026-09-04.md. No activation claim until an exact merchant transit policy is separately approved/configured and staging-tested. Tests: `php tests/delivery-promise-contract-test.php`; fixtures are explicitly synthetic.
