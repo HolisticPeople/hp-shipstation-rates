@@ -37,4 +37,6 @@ $c=context('2026-09-04T17:00:00-04:00');$c['service_key']='ups:ground';check($pr
 check($provider->estimate(context('2026-02-30T17:00:00-05:00'))['reason'],'invalid_evaluation_time','Invalid dates not normalized');
 check($provider->estimate(context('tomorrow'))['reason'],'invalid_evaluation_time','No implicit timezone/time parsing');
 check(hp_ss_get_delivery_promise_v1(context('2026-09-04T17:00:00-04:00'))['status'],'unavailable','Missing WP/options fail soft');
+foreach (['2026-09-04T17:00:00+99:99','2026-09-04T17:00:00+04:99','2026-09-04T17:00:00+14:01','2026-09-04T25:00:00+00:00'] as $badTime) { check($provider->estimate(context($badTime))['reason'],'invalid_evaluation_time','Malformed offsets/times must never normalize into a promise'); }
+check($provider->estimate(context('2026-09-04T17:00:00Z'))['status'],'ready','Explicit UTC Z accepted');
 echo "Delivery promise synthetic contract passed.\n";

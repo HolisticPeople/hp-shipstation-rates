@@ -12,9 +12,15 @@ final class HP_SS_Delivery_Promise {
             || !is_string($destination['state'] ?? null) || !is_string($stamp)) {
             return $this->unavailable('invalid_context');
         }
+        // PHP accepts overflowing offsets such as +99:99 without a warning.
+        // Accept only explicit real-world RFC3339 offsets, never normalization.
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:Z|[+-](?:0\d|1[0-3]):[0-5]\d|[+-]14:00)$/D', $stamp)) {
+            return $this->unavailable('invalid_evaluation_time');
+        }
         $instant = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:sP', $stamp);
         $errors = DateTimeImmutable::getLastErrors();
-        if (!$instant || ($errors && ($errors['warning_count'] || $errors['error_count']))) {
+        if (!$instant || ($errors && ($errors['warning_count'] || $errors['error_count']))
+            || $instant->format(DATE_ATOM) !== preg_replace('/Z$/', '+00:00', $stamp)) {
             return $this->unavailable('invalid_evaluation_time');
         }
         $matches = [];
