@@ -24,6 +24,11 @@ report_check($report['scope']['states'], ['DC', 'NY'], 'Reported scope is determ
 report_check($report['provider']['plugin_version'], null, 'Provider works before plugin constants load');
 report_check($report['provider']['owner'], 'HP ShipStation Rates', 'Provider owner is explicit');
 
+$option['rules'][0]['states'][] = 'NY';
+$report = hp_ss_get_google_submit_data_v1();
+report_check($report['status'], 'ready', 'Repeated state in one rule is not ambiguous');
+$option['rules'][0]['states'] = ['DC', 'NY'];
+
 $option['rules'][] = ['id' => 'invalid'];
 $report = hp_ss_get_google_submit_data_v1();
 report_check($report['status'], 'unavailable', 'Mixed valid and invalid configuration is not ready');

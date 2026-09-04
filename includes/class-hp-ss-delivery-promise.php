@@ -166,7 +166,7 @@ function hp_ss_get_google_submit_data_v1(): array {
             $report['configuration']['transit_rules']['rules'][] = $sanitized;
             $report['configuration']['transit_rules']['valid_rule_count']++;
             $ruleKey = $rule['service_key'] . '|' . $rule['country'];
-            foreach ($rule['states'] as $state) {
+            foreach (array_unique($rule['states']) as $state) {
                 if (isset($ruleStates[$ruleKey][$state])) {
                     $report['configuration']['transit_rules']['ambiguous_rule_count']++;
                 }
