@@ -130,9 +130,9 @@ function hp_ss_get_google_submit_data_v1(): array {
         'generated_at' => gmdate('c'),
         'status' => 'unavailable',
         'errors' => [],
-        'provider' => ['plugin_version' => defined('HP_SS_VERSION') ? HP_SS_VERSION : null],
+        'provider' => ['owner' => 'HP ShipStation Rates', 'plugin_version' => defined('HP_SS_VERSION') ? HP_SS_VERSION : null],
         'configuration' => [
-            'transit_rules' => ['configured' => false, 'valid_rule_count' => 0, 'rejected_rule_count' => 0, 'rules' => []],
+            'transit_rules' => ['configured' => false, 'valid_rule_count' => 0, 'rejected_rule_count' => 0, 'ambiguous_rule_count' => 0, 'rules' => []],
             'handling' => ['cutoff' => '18:00', 'timezone' => 'America/New_York', 'max_days' => 2, 'calendar' => 'us_federal_mon_fri'],
         ],
         'scope' => ['countries' => [], 'states' => [], 'service_keys' => []],
@@ -152,6 +152,7 @@ function hp_ss_get_google_submit_data_v1(): array {
         }
 
         $report['configuration']['transit_rules']['configured'] = true;
+        $ruleStates = [];
         foreach ($option['rules'] as $rule) {
             if (!HP_SS_Delivery_Promise::valid_rule($rule)) {
                 $report['configuration']['transit_rules']['rejected_rule_count']++;
@@ -164,6 +165,13 @@ function hp_ss_get_google_submit_data_v1(): array {
             ];
             $report['configuration']['transit_rules']['rules'][] = $sanitized;
             $report['configuration']['transit_rules']['valid_rule_count']++;
+            $ruleKey = $rule['service_key'] . '|' . $rule['country'];
+            foreach ($rule['states'] as $state) {
+                if (isset($ruleStates[$ruleKey][$state])) {
+                    $report['configuration']['transit_rules']['ambiguous_rule_count']++;
+                }
+                $ruleStates[$ruleKey][$state] = true;
+            }
             if ($rule['approved'] === true) {
                 $report['scope']['countries'][] = $rule['country'];
                 $report['scope']['states'] = array_merge($report['scope']['states'], $rule['states']);
@@ -178,6 +186,8 @@ function hp_ss_get_google_submit_data_v1(): array {
             $report['errors'][] = 'transit_policy_unavailable';
         } elseif ($report['configuration']['transit_rules']['rejected_rule_count'] > 0) {
             $report['errors'][] = 'invalid_transit_policy_configuration';
+        } elseif ($report['configuration']['transit_rules']['ambiguous_rule_count'] > 0) {
+            $report['errors'][] = 'ambiguous_transit_policy_configuration';
         } else {
             $report['status'] = 'ready';
         }
