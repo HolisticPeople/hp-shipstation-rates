@@ -25,7 +25,7 @@ final class HP_SS_Delivery_Promise {
         }
         $matches = [];
         foreach ($this->rules as $rule) {
-            if (!$this->valid_rule($rule)) { continue; }
+            if (!self::valid_rule($rule)) { continue; }
             if ($rule['service_key'] === $service && $rule['country'] === $destination['country']
                 && in_array($destination['state'], $rule['states'], true)) { $matches[] = $rule; }
         }
@@ -54,7 +54,7 @@ final class HP_SS_Delivery_Promise {
         ];
     }
 
-    private function valid_rule(mixed $rule): bool {
+    public static function valid_rule(mixed $rule): bool {
         if (!is_array($rule) || ($rule['approved'] ?? null) !== true
             || ($rule['includes_handling'] ?? false) !== false
             || !is_string($rule['id'] ?? null) || !preg_match('/^[a-zA-Z0-9_.-]{1,50}$/D', $rule['id'])
@@ -116,4 +116,84 @@ function hp_ss_get_delivery_promise_v1(array $context): array {
     } catch (Throwable $error) {
         return ['version'=>1, 'status'=>'unavailable', 'reason'=>'estimate_provider_unavailable'];
     }
+}
+
+/**
+ * Return the configured delivery-policy state for an owner-controlled Google
+ * Submit Data presentation. This report is deliberately pure and sanitized:
+ * it neither quotes rates nor makes HTTP requests, and omits rule source text.
+ */
+function hp_ss_get_google_submit_data_v1(): array {
+    $report = [
+        'schema_version' => 1,
+        'version' => 1,
+        'generated_at' => gmdate('c'),
+        'status' => 'unavailable',
+        'errors' => [],
+        'provider' => ['owner' => 'HP ShipStation Rates', 'plugin_version' => defined('HP_SS_VERSION') ? HP_SS_VERSION : null],
+        'configuration' => [
+            'transit_rules' => ['configured' => false, 'valid_rule_count' => 0, 'rejected_rule_count' => 0, 'ambiguous_rule_count' => 0, 'rules' => []],
+            'handling' => ['cutoff' => '18:00', 'timezone' => 'America/New_York', 'max_days' => 2, 'calendar' => 'us_federal_mon_fri'],
+        ],
+        'scope' => ['countries' => [], 'states' => [], 'service_keys' => []],
+        'limitations' => [
+            'package_not_enforced',
+            'origin_not_enforced',
+            'postcode_not_enforced',
+            'disruption_not_enforced',
+        ],
+    ];
+
+    try {
+        $option = function_exists('get_option') ? get_option('hp_ss_delivery_transit_rules_v1', []) : [];
+        if (!is_array($option) || ($option['version'] ?? null) !== 1 || !is_array($option['rules'] ?? null)) {
+            $report['errors'][] = 'transit_policy_unavailable';
+            return $report;
+        }
+
+        $report['configuration']['transit_rules']['configured'] = true;
+        $ruleStates = [];
+        foreach ($option['rules'] as $rule) {
+            if (!HP_SS_Delivery_Promise::valid_rule($rule)) {
+                $report['configuration']['transit_rules']['rejected_rule_count']++;
+                continue;
+            }
+            $sanitized = [
+                'id' => $rule['id'], 'service_key' => $rule['service_key'], 'country' => $rule['country'],
+                'states' => array_values($rule['states']), 'max_days' => $rule['max_days'],
+                'day_type' => $rule['day_type'], 'calendar' => $rule['calendar'], 'approved' => $rule['approved'],
+            ];
+            $report['configuration']['transit_rules']['rules'][] = $sanitized;
+            $report['configuration']['transit_rules']['valid_rule_count']++;
+            $ruleKey = $rule['service_key'] . '|' . $rule['country'];
+            foreach (array_unique($rule['states']) as $state) {
+                if (isset($ruleStates[$ruleKey][$state])) {
+                    $report['configuration']['transit_rules']['ambiguous_rule_count']++;
+                }
+                $ruleStates[$ruleKey][$state] = true;
+            }
+            if ($rule['approved'] === true) {
+                $report['scope']['countries'][] = $rule['country'];
+                $report['scope']['states'] = array_merge($report['scope']['states'], $rule['states']);
+                $report['scope']['service_keys'][] = $rule['service_key'];
+            }
+        }
+        foreach (['countries', 'states', 'service_keys'] as $key) {
+            $report['scope'][$key] = array_values(array_unique($report['scope'][$key]));
+            sort($report['scope'][$key]);
+        }
+        if ($report['configuration']['transit_rules']['valid_rule_count'] === 0) {
+            $report['errors'][] = 'transit_policy_unavailable';
+        } elseif ($report['configuration']['transit_rules']['rejected_rule_count'] > 0) {
+            $report['errors'][] = 'invalid_transit_policy_configuration';
+        } elseif ($report['configuration']['transit_rules']['ambiguous_rule_count'] > 0) {
+            $report['errors'][] = 'ambiguous_transit_policy_configuration';
+        } else {
+            $report['status'] = 'ready';
+        }
+    } catch (Throwable $error) {
+        $report['errors'][] = 'google_submit_data_provider_unavailable';
+    }
+
+    return $report;
 }

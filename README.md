@@ -1,3 +1,7 @@
+# 4.2.4 — Google Submit Data report provider
+
+Adds `hp_ss_get_google_submit_data_v1()`, a sanitized read-only report of the configured delivery policy, handling calendar and supported scope for the GMC owner UI. It makes no network calls, rate changes, credential reads or configuration writes. Rule-source text is omitted; package, origin, postcode and disruption exceptions remain explicit limits because the current matcher does not enforce them.
+
 # 4.2.3 — Optional delivery estimate contract
 
 Adds a pure, fail-soft delivery estimator for HP Checkout. Rules default empty; synthetic tests do not authorize production policies. No rate, backend, credential, label, or tracking behavior changes. See [contract](docs/delivery-promise-v1.md).
