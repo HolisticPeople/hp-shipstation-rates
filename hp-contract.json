@@ -3,7 +3,8 @@
   "repo": "HolisticPeople/hp-shipstation-rates",
   "schema_version": "1.0",
   "owns": [
-    "Storefront live shipping rate quoting for classic WooCommerce checkout via the hp_shipstation WC shipping method (ShipStation-backed USPS/UPS/FedEx rates, carrier-qualified service allow-list with custom display names, carrier badges, quote caching)"
+    "Storefront live shipping rate quoting for classic WooCommerce checkout via the hp_shipstation WC shipping method (ShipStation-backed USPS/UPS/FedEx rates, carrier-qualified service allow-list with custom display names, carrier badges, quote caching)",
+    "Pure upfront delivery estimates from explicitly approved service/destination transit policies, including confirmed handling cutoff and calendar; default unavailable"
   ],
   "must_not_own": [
     "cross-plugin source mutation without registered contract",
@@ -21,7 +22,9 @@
     "providers": [
       "hp_ss_get_enabled_service_codes() - legacy enabled ShipStation service codes for consumers",
       "hp_ss_get_enabled_service_keys() - carrier-qualified enabled ShipStation service identities",
-      "hp_ss_get_enabled_carrier_codes() - enabled V1 carrier codes shared by HP Core, EAO, checkout, and funnel consumers"
+      "hp_ss_get_enabled_carrier_codes() - enabled V1 carrier codes shared by HP Core, EAO, checkout, and funnel consumers",
+      "hp_ss_get_delivery_promise_v1(array $context): array",
+      "hp_ss_get_google_submit_data_v1(): array - sanitized read-only delivery-policy report for the GMC-owned Google Submit Data presentation"
     ]
   },
   "verification": {

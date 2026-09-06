@@ -26,6 +26,8 @@ fail-soft contracts; never their internals; no hard coupling):
 
 ## READ FIRST
   - HP-Codex-Skills/skills/hp-roadmap/references/roadmaps/hp-dev-phase-current-state-index-2026-06.md
+  - HP-Codex-Skills/skills/hp-roadmap/references/roadmaps/hp-checkout-shipping-authority-handover-2026-08-24.md
+    (HP Checkout is the sole supported customer checkout; classic Woo shipping is compatibility-only; quote weight is exact and never rounded/clamped.)
 
 ## WHEN YOU FINISH SOMETHING DURABLE
   - Land it as ONE commit: the central plan doc + this repo's pointer (AGENTS.md, docs/plan/parking-lot.md).
