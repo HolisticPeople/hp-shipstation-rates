@@ -13,3 +13,9 @@ vendor/
 Plans and reports/
 OneTeam-api-fix-backup-20251014-195515.tgz
 oneteam-includes.tgz
+
+# Dev-only paths (never needed at runtime; removed from the deployed tree
+# after rsync by the deploy workflow's DEV_ONLY_PATHS step)
+tests/
+docs/
+.cursor/
