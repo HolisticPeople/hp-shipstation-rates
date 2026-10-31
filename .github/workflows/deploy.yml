@@ -131,14 +131,38 @@ jobs:
             "$SSH_USER@$SSH_HOST" \
             "echo 'SSH connection successful!'"
 
+      # Backups go to ~/private/plugin-backups (outside wp-content/plugins, so
+      # WordPress never lists them as inactive plugins); keep the newest 3.
       - name: Backup existing plugin (if exists)
         run: |
+          set -euo pipefail
           PLUGIN_PATH="$PLUGINS_BASE/$PLUGIN_SLUG"
+          STAMP="$(date +%Y%m%d-%H%M%S)"
 
           echo "Checking for existing plugin at: $PLUGIN_PATH"
 
           ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
-            "if [ -d '$PLUGIN_PATH' ]; then cp -rn '$PLUGIN_PATH' '$PLUGIN_PATH.bak.$(date +%Y%m%d-%H%M%S)'; echo 'Backup created'; else echo 'No existing plugin to backup'; fi"
+            "bash -s -- '$PLUGIN_PATH' '$PLUGIN_SLUG' '$STAMP'" <<'REMOTE'
+          set -euo pipefail
+          plugin_path="$1"; slug="$2"; stamp="$3"
+          backup_dir="$HOME/private/plugin-backups"
+          keep=3
+          mkdir -p "$backup_dir"
+          if [ -d "$plugin_path" ]; then
+            cp -rn "$plugin_path" "$backup_dir/$slug.$stamp"
+            echo "Backup created: $backup_dir/$slug.$stamp"
+          else
+            echo "No existing plugin to backup"
+          fi
+          # Prune strictly inside $backup_dir, only <slug>.<YYYYmmdd-HHMMSS>
+          # directories; the newest $keep stay.
+          find "$backup_dir" -mindepth 1 -maxdepth 1 -type d -name "$slug.*" -printf '%f\n' \
+            | grep -E "^$slug\.[0-9]{8}-[0-9]{6}$" | sort -r | tail -n +"$((keep + 1))" \
+            | while read -r old; do
+                rm -rf -- "${backup_dir:?}/$old"
+                echo "Pruned old backup: $backup_dir/$old"
+              done
+          REMOTE
 
       - name: Rsync plugin files
         run: |
@@ -230,14 +254,38 @@ jobs:
             "$SSH_USER@$SSH_HOST" \
             "echo 'SSH connection successful!'"
 
+      # Backups go to ~/private/plugin-backups (outside wp-content/plugins, so
+      # WordPress never lists them as inactive plugins); keep the newest 3.
       - name: Backup existing plugin (if exists)
         run: |
+          set -euo pipefail
           PLUGIN_PATH="$PLUGINS_BASE/$PLUGIN_SLUG"
+          STAMP="$(date +%Y%m%d-%H%M%S)"
 
           echo "Checking for existing plugin at: $PLUGIN_PATH"
 
           ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
-            "if [ -d '$PLUGIN_PATH' ]; then cp -rn '$PLUGIN_PATH' '$PLUGIN_PATH.bak.$(date +%Y%m%d-%H%M%S)'; echo 'Backup created'; else echo 'No existing plugin to backup'; fi"
+            "bash -s -- '$PLUGIN_PATH' '$PLUGIN_SLUG' '$STAMP'" <<'REMOTE'
+          set -euo pipefail
+          plugin_path="$1"; slug="$2"; stamp="$3"
+          backup_dir="$HOME/private/plugin-backups"
+          keep=3
+          mkdir -p "$backup_dir"
+          if [ -d "$plugin_path" ]; then
+            cp -rn "$plugin_path" "$backup_dir/$slug.$stamp"
+            echo "Backup created: $backup_dir/$slug.$stamp"
+          else
+            echo "No existing plugin to backup"
+          fi
+          # Prune strictly inside $backup_dir, only <slug>.<YYYYmmdd-HHMMSS>
+          # directories; the newest $keep stay.
+          find "$backup_dir" -mindepth 1 -maxdepth 1 -type d -name "$slug.*" -printf '%f\n' \
+            | grep -E "^$slug\.[0-9]{8}-[0-9]{6}$" | sort -r | tail -n +"$((keep + 1))" \
+            | while read -r old; do
+                rm -rf -- "${backup_dir:?}/$old"
+                echo "Pruned old backup: $backup_dir/$old"
+              done
+          REMOTE
 
       - name: Rsync plugin files
         run: |

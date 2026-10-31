@@ -74,6 +74,24 @@ foreach (['staging' => $staging, 'production' => $production] as $name => $job) 
     hp_ssr_deploy_assert($purge !== false && preg_match('/wp kinsta cache purge --all"\n/', substr($job, (int) $purge)) === 1, "$name purge must run wp kinsta cache purge --all without swallowing failure.");
 }
 
+// Backups live outside wp-content/plugins (WordPress listed 14 stale
+// hp-shipstation-rates.bak.* siblings as inactive plugins on staging) and are
+// pruned to the newest 3, strictly inside that directory and slug prefix.
+hp_ssr_deploy_assert(!str_contains($workflow, '.bak.'), 'Backups must never be written beside the plugin as <slug>.bak.* siblings.');
+foreach (['staging' => $staging, 'production' => $production] as $name => $job) {
+    $backup_at = strpos($job, '- name: Backup existing plugin');
+    $rsync_at  = strpos($job, '- name: Rsync plugin files');
+    hp_ssr_deploy_assert($backup_at !== false && $rsync_at !== false && $backup_at < $rsync_at, "$name job must back up before rsync.");
+    $backup = $backup_at !== false && $rsync_at !== false ? substr($job, (int) $backup_at, (int) $rsync_at - (int) $backup_at) : '';
+    hp_ssr_deploy_assert(str_contains($backup, 'backup_dir="$HOME/private/plugin-backups"'), "$name backup must target ~/private/plugin-backups.");
+    hp_ssr_deploy_assert(str_contains($backup, 'cp -rn "$plugin_path" "$backup_dir/$slug.$stamp"'), "$name backup must copy to <backup_dir>/<slug>.<stamp>.");
+    hp_ssr_deploy_assert(str_contains($backup, 'keep=3') && str_contains($backup, 'tail -n +"$((keep + 1))"'), "$name backup must keep only the newest 3.");
+    hp_ssr_deploy_assert(str_contains($backup, 'find "$backup_dir" -mindepth 1 -maxdepth 1 -type d -name "$slug.*"'), "$name prune must stay inside backup_dir (depth 1) and the slug prefix.");
+    hp_ssr_deploy_assert(str_contains($backup, 'grep -E "^$slug\.[0-9]{8}-[0-9]{6}$"'), "$name prune must only match <slug>.<YYYYmmdd-HHMMSS>.");
+    hp_ssr_deploy_assert(str_contains($backup, 'rm -rf -- "${backup_dir:?}/$old"'), "$name prune must delete only under a non-empty backup_dir.");
+    hp_ssr_deploy_assert(substr_count($backup, 'rm -rf') === 1, "$name backup step must have exactly one rm -rf (the scoped prune).");
+}
+
 // deploy-exclude covers every dev-only path the workflow prunes.
 hp_ssr_deploy_assert(preg_match('/^  DEV_ONLY_PATHS: (.+)$/m', $workflow, $dev_only) === 1, 'Workflow must declare DEV_ONLY_PATHS.');
 $excluded = array_map('trim', explode("\n", $exclude));
