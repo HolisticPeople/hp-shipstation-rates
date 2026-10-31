@@ -1,5 +1,11 @@
 name: Deploy HP ShipStation Rates to Kinsta
 
+# Canonical two-job shape (C:\DEV\CLAUDE.md "CI / workflows", 2026-10-31
+# side-findings sweep): the staging job runs on a dev push OR a staging
+# dispatch; the production job runs ONLY on a production dispatch. The staging
+# auto-trigger is scoped to push events so a production dispatch from the dev
+# ref never also deploys staging.
+
 on:
   push:
     branches:
@@ -21,46 +27,31 @@ on:
         default: false
         type: boolean
 
+env:
+  PLUGIN_SLUG: hp-shipstation-rates
+  # Dev-only paths listed in .github/deploy-exclude.txt. rsync runs without
+  # --delete, so copies left by older deploys are removed explicitly after
+  # each rsync to keep tests/docs out of the served plugin tree.
+  DEV_ONLY_PATHS: tests docs .cursor
+
 jobs:
-  deploy:
+  deploy-staging:
+    if: |
+      (github.event_name == 'push' && github.ref_name == 'dev') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    name: Deploy to STAGING
     runs-on: ubuntu-latest
-    
+    env:
+      SSH_HOST: ${{ secrets.KINSTA_HOST }}
+      SSH_PORT: ${{ secrets.KINSTA_PORT }}
+      SSH_USER: ${{ secrets.KINSTA_USER }}
+      PLUGINS_BASE: ${{ secrets.KINSTA_PLUGINS_BASE }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Determine environment
-        id: env
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            # Automatic push to dev = staging deployment
-            echo "env=staging" >> $GITHUB_OUTPUT
-          else
-            # Manual workflow_dispatch = user chooses environment
-            echo "env=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Set environment variables
-        id: vars
-        run: |
-          ENV="${{ steps.env.outputs.env }}"
-          
-          if [ "$ENV" = "production" ]; then
-            echo "host=${{ secrets.KINSTAPROD_HOST }}" >> $GITHUB_OUTPUT
-            echo "port=${{ secrets.KINSTAPROD_PORT }}" >> $GITHUB_OUTPUT
-            echo "user=${{ secrets.KINSTAPROD_USER }}" >> $GITHUB_OUTPUT
-            echo "plugins_base=${{ secrets.KINSTAPROD_PLUGINS_BASE }}" >> $GITHUB_OUTPUT
-          else
-            echo "host=${{ secrets.KINSTA_HOST }}" >> $GITHUB_OUTPUT
-            echo "port=${{ secrets.KINSTA_PORT }}" >> $GITHUB_OUTPUT
-            echo "user=${{ secrets.KINSTA_USER }}" >> $GITHUB_OUTPUT
-            echo "plugins_base=${{ secrets.KINSTA_PLUGINS_BASE }}" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "environment=$ENV" >> $GITHUB_OUTPUT
-
       - name: Test staging lease check
-        if: steps.vars.outputs.environment == 'staging'
         run: python3 -B .github/hp-deploy/staging-lease-check-test.py
 
       # P4/P4b (2026-10-30): a lane mid-browser-QA books a lease naming the
@@ -68,7 +59,6 @@ jobs:
       # unexpired leases naming hp-shipstation-rates; missing directory = free; SSH error =
       # fail closed. Leases from other plugins never block this deploy.
       - name: Respect active staging leases
-        if: steps.vars.outputs.environment == 'staging'
         env:
           IGNORE_STAGING_LEASES: ${{ github.event_name == 'workflow_dispatch' && inputs.ignore_staging_leases == true }}
           KINSTA_HOST: ${{ secrets.KINSTA_HOST }}
@@ -118,70 +108,184 @@ jobs:
           esac
 
       - name: Setup SSH key
+        env:
+          SSH_KEY: ${{ secrets.KINSTA_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          if [ "${{ steps.vars.outputs.environment }}" = "production" ]; then
-            echo "${{ secrets.KINSTAPROD_SSH_KEY }}" > ~/.ssh/kinsta_key
-          else
-            echo "${{ secrets.KINSTA_SSH_KEY }}" > ~/.ssh/kinsta_key
-          fi
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/kinsta_key
           chmod 600 ~/.ssh/kinsta_key
-          
+
           # Verify key format
           echo "Verifying SSH key format..."
           head -1 ~/.ssh/kinsta_key
           tail -1 ~/.ssh/kinsta_key
-          
+
           # Add host to known_hosts
-          ssh-keyscan -p ${{ steps.vars.outputs.port }} ${{ steps.vars.outputs.host }} >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Test SSH connection
         run: |
-          echo "Testing SSH connection to ${{ steps.vars.outputs.environment }}..."
-          ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
+          echo "Testing SSH connection to staging..."
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" \
             -o StrictHostKeyChecking=no \
-            ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
+            "$SSH_USER@$SSH_HOST" \
             "echo 'SSH connection successful!'"
 
       - name: Backup existing plugin (if exists)
         run: |
-          PLUGIN_PATH="${{ steps.vars.outputs.plugins_base }}/hp-shipstation-rates"
-          
+          PLUGIN_PATH="$PLUGINS_BASE/$PLUGIN_SLUG"
+
           echo "Checking for existing plugin at: $PLUGIN_PATH"
-          
-          ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
-            ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
+
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
             "if [ -d '$PLUGIN_PATH' ]; then cp -rn '$PLUGIN_PATH' '$PLUGIN_PATH.bak.$(date +%Y%m%d-%H%M%S)'; echo 'Backup created'; else echo 'No existing plugin to backup'; fi"
 
-      - name: Deploy to ${{ steps.vars.outputs.environment }}
+      - name: Rsync plugin files
         run: |
-          PLUGIN_PATH="${{ steps.vars.outputs.plugins_base }}/hp-shipstation-rates"
-          
-          echo "Deploying to: ${{ steps.vars.outputs.environment }}"
+          set -euo pipefail
+          PLUGIN_PATH="$PLUGINS_BASE/$PLUGIN_SLUG"
+
+          echo "Deploying to: staging"
           echo "Target path: $PLUGIN_PATH"
-          
+
           # Create plugin directory if it doesn't exist
-          ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
-            ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
-            "mkdir -p $PLUGIN_PATH"
-          
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "mkdir -p '$PLUGIN_PATH'"
+
           # Deploy files using rsync (NO --delete to prevent accidental deletion)
           rsync -avz \
-            -e "ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }}" \
+            -e "ssh -i ~/.ssh/kinsta_key -p $SSH_PORT" \
             --exclude-from='.github/deploy-exclude.txt' \
-            ./ ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }}:$PLUGIN_PATH/
-          
-          echo "✅ Deployment to ${{ steps.vars.outputs.environment }} complete!"
+            ./ "$SSH_USER@$SSH_HOST:$PLUGIN_PATH/"
+
+          echo "✅ Deployment to staging complete!"
+
+      - name: Remove dev-only paths from deployed tree
+        run: |
+          set -euo pipefail
+          PLUGIN_PATH="$PLUGINS_BASE/$PLUGIN_SLUG"
+          for rel in $DEV_ONLY_PATHS; do
+            grep -qxF "$rel/" .github/deploy-exclude.txt || { echo "::error::$rel/ is not in .github/deploy-exclude.txt"; exit 1; }
+          done
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "set -e; cd '$PLUGIN_PATH'; for rel in $DEV_ONLY_PATHS; do if [ -e \"\$rel\" ]; then rm -rf -- \"\$rel\"; echo \"removed \$rel\"; fi; done"
 
       - name: Flush caches
         run: |
           echo "Flushing WordPress caches..."
-          
-          ssh -i ~/.ssh/kinsta_key -p ${{ steps.vars.outputs.port }} \
-            ${{ steps.vars.outputs.user }}@${{ steps.vars.outputs.host }} \
-            "cd ${{ steps.vars.outputs.plugins_base }}/../.. && wp cache flush --allow-root && wp transient delete --all --allow-root || true"
-          
+
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "cd '$PLUGINS_BASE/../..' && wp cache flush --allow-root && wp transient delete --all --allow-root || true"
+
           echo "✅ Cache flush complete!"
+
+      # Kinsta's page/CDN cache serves stale HTML+JS past a plain `wp cache
+      # flush`; a skipped purge left stale JS live after a 2026-07-27 deploy.
+      - name: Purge Kinsta page cache
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "cd '$PLUGINS_BASE/../..' && wp kinsta cache purge --all"
+          echo "Kinsta page cache purged after staging deploy"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/kinsta_key
+
+  deploy-production:
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'production'
+    name: Deploy to PRODUCTION
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.KINSTAPROD_HOST }}
+      SSH_PORT: ${{ secrets.KINSTAPROD_PORT }}
+      SSH_USER: ${{ secrets.KINSTAPROD_USER }}
+      PLUGINS_BASE: ${{ secrets.KINSTAPROD_PLUGINS_BASE }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup SSH key
+        env:
+          SSH_KEY: ${{ secrets.KINSTAPROD_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/kinsta_key
+          chmod 600 ~/.ssh/kinsta_key
+
+          # Verify key format
+          echo "Verifying SSH key format..."
+          head -1 ~/.ssh/kinsta_key
+          tail -1 ~/.ssh/kinsta_key
+
+          # Add host to known_hosts
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Test SSH connection
+        run: |
+          echo "Testing SSH connection to production..."
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" \
+            -o StrictHostKeyChecking=no \
+            "$SSH_USER@$SSH_HOST" \
+            "echo 'SSH connection successful!'"
+
+      - name: Backup existing plugin (if exists)
+        run: |
+          PLUGIN_PATH="$PLUGINS_BASE/$PLUGIN_SLUG"
+
+          echo "Checking for existing plugin at: $PLUGIN_PATH"
+
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "if [ -d '$PLUGIN_PATH' ]; then cp -rn '$PLUGIN_PATH' '$PLUGIN_PATH.bak.$(date +%Y%m%d-%H%M%S)'; echo 'Backup created'; else echo 'No existing plugin to backup'; fi"
+
+      - name: Rsync plugin files
+        run: |
+          set -euo pipefail
+          PLUGIN_PATH="$PLUGINS_BASE/$PLUGIN_SLUG"
+
+          echo "Deploying to: production"
+          echo "Target path: $PLUGIN_PATH"
+
+          # Create plugin directory if it doesn't exist
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "mkdir -p '$PLUGIN_PATH'"
+
+          # Deploy files using rsync (NO --delete to prevent accidental deletion)
+          rsync -avz \
+            -e "ssh -i ~/.ssh/kinsta_key -p $SSH_PORT" \
+            --exclude-from='.github/deploy-exclude.txt' \
+            ./ "$SSH_USER@$SSH_HOST:$PLUGIN_PATH/"
+
+          echo "✅ Deployment to production complete!"
+
+      - name: Remove dev-only paths from deployed tree
+        run: |
+          set -euo pipefail
+          PLUGIN_PATH="$PLUGINS_BASE/$PLUGIN_SLUG"
+          for rel in $DEV_ONLY_PATHS; do
+            grep -qxF "$rel/" .github/deploy-exclude.txt || { echo "::error::$rel/ is not in .github/deploy-exclude.txt"; exit 1; }
+          done
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "set -e; cd '$PLUGIN_PATH'; for rel in $DEV_ONLY_PATHS; do if [ -e \"\$rel\" ]; then rm -rf -- \"\$rel\"; echo \"removed \$rel\"; fi; done"
+
+      - name: Flush caches
+        run: |
+          echo "Flushing WordPress caches..."
+
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "cd '$PLUGINS_BASE/../..' && wp cache flush --allow-root && wp transient delete --all --allow-root || true"
+
+          echo "✅ Cache flush complete!"
+
+      # Kinsta's page/CDN cache serves stale HTML+JS past a plain `wp cache
+      # flush`; a skipped purge left stale JS live after a 2026-07-27 deploy.
+      - name: Purge Kinsta page cache
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/kinsta_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "cd '$PLUGINS_BASE/../..' && wp kinsta cache purge --all"
+          echo "Kinsta page cache purged after production deploy"
 
       - name: Cleanup
         if: always()
